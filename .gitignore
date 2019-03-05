@@ -1,0 +1,3 @@
+build/
+*.log
+Docker/oracle-instantclient*
