@@ -108,7 +108,7 @@ func main() {
 	}
 
 	em := initElasticManager(*eh)
-	defer em.Close(logger)
+	defer em.Close()
 
 	extractUnichemData(*oraconn, em)
 

@@ -29,15 +29,18 @@ type Compound struct {
 // ElasticManager used for connection and adding compounds to the
 // elastic server
 type ElasticManager struct {
-	Context       context.Context
-	Client        *elastic.Client
-	BulkProcessor *elastic.BulkProcessor
-	IndexName     string
-	TypeName      string
+	logger    *zap.SugaredLogger
+	Context   context.Context
+	Client    *elastic.Client
+	IndexName string
+	TypeName  string
 }
 
 // Init function initializes an elastic client and pings it to check the provider server is up
 func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
+
+	em.logger = logger
+
 	var err error
 
 	mapping := `{
@@ -78,44 +81,34 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 
 	inf, code, err := em.Client.Ping(host).Do(em.Context)
 	if err != nil {
-		logger.Panic("Error Pinging elastic client ", err)
+		em.logger.Panic("Error Pinging elastic client ", err)
 		return err
 	}
-	logger.Info(fmt.Sprintf("Elasticsearch returned with code %d and version %s\n", code, inf.Version.Number))
+	em.logger.Info(fmt.Sprintf("Elasticsearch returned with code %d and version %s\n", code, inf.Version.Number))
 
 	ex, err := em.Client.IndexExists(em.IndexName).Do(em.Context)
 	if err != nil {
-		logger.Panic("Error fetchin index existence ", err)
+		em.logger.Panic("Error fetchin index existence ", err)
 		return err
 	}
 
 	if !ex {
 		in, err := em.Client.CreateIndex(em.IndexName).BodyString(mapping).Do(em.Context)
-		logger.Infof("Creating index %s", em.IndexName)
+		em.logger.Infof("Creating index %s", em.IndexName)
 		if err != nil {
-			logger.Panic("Error creating index  ", err)
+			em.logger.Panic("Error creating index  ", err)
 			return err
 		}
 
 		if !in.Acknowledged {
-			logger.Error("Index creation not acknowledged")
+			em.logger.Error("Index creation not acknowledged")
 			return err
 		}
 	} else {
-		logger.Infof("Index %s found", em.IndexName)
+		em.logger.Infof("Index %s found", em.IndexName)
 	}
 
-	em.BulkProcessor, err = em.Client.BulkProcessor().
-		BulkActions(1000).
-		Workers(4).
-		FlushInterval(10 * time.Second).
-		Stats(true).
-		Do(em.Context)
-	if err != nil {
-		logger.Panic("FATAL trying to create bulk processor service ", err)
-	}
-
-	logger.Info("Elastic search init successfully")
+	em.logger.Info("Elastic search init successfully")
 
 	return nil
 }
@@ -146,14 +139,6 @@ func (em *ElasticManager) SendToElastic(c Compound, logger *zap.SugaredLogger) e
 }
 
 //Close terminates the ElasticSearch Client and BulkProcessor
-func (em *ElasticManager) Close(logger *zap.SugaredLogger) error {
-	err := em.BulkProcessor.Close()
-	if err != nil {
-
-		return err
-	}
-
+func (em *ElasticManager) Close() {
 	em.Client.Stop()
-
-	return nil
 }
