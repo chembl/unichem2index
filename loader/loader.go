@@ -19,7 +19,7 @@ type CompoundSource struct {
 // Compound is an structure describing the information to be indexed
 // extracted from Unichem database
 type Compound struct {
-	UCI              string           `json:"uci"`
+	UCI              string           `json:"uci,omitempty"`
 	Inchi            string           `json:"inchi"`
 	StandardInchiKey string           `json:"standard_inchi_key"`
 	Sources          []CompoundSource `json:"sources,omitempty"`
