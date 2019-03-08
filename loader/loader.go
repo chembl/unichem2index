@@ -2,7 +2,7 @@ package loader
 
 import (
 	"context"
-	"fmt"
+	"sync"
 	"time"
 
 	"github.com/olivere/elastic"
@@ -19,26 +19,44 @@ type CompoundSource struct {
 // Compound is an structure describing the information to be indexed
 // extracted from Unichem database
 type Compound struct {
-	UCI              string           `json:"uci,omitempty"`
+	UCI              string           `json:"uci"`
 	Inchi            string           `json:"inchi"`
 	StandardInchiKey string           `json:"standard_inchi_key"`
-	Sources          []CompoundSource `json:"sources"`
+	Sources          []CompoundSource `json:"sources,omitempty"`
 	CreatedAt        time.Time        `json:"created_at"`
+}
+
+// WorkerResponse contains the result of the BulkRequest to the ElasticSearch index
+type WorkerResponse struct {
+	Succedded   int
+	Indexed     int
+	Created     int
+	Updated     int
+	Deleted     int
+	Failed      int
+	IsSuccesful bool
 }
 
 // ElasticManager used for connection and adding compounds to the
 // elastic server
 type ElasticManager struct {
-	logger    *zap.SugaredLogger
-	Context   context.Context
-	Client    *elastic.Client
-	IndexName string
-	TypeName  string
+	logger             *zap.SugaredLogger
+	Context            context.Context
+	Client             *elastic.Client
+	IndexName          string
+	TypeName           string
+	Bulklimit          int
+	countBulkRequest   int
+	currentBulkService *elastic.BulkService
+	Errchan            chan error
+	Respchan           chan WorkerResponse
+	WaitGroup          sync.WaitGroup
+	currentBulkCalls   int
+	MaxBulkCalls       int
 }
 
 // Init function initializes an elastic client and pings it to check the provider server is up
 func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
-
 	em.logger = logger
 
 	var err error
@@ -84,7 +102,7 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 		em.logger.Panic("Error Pinging elastic client ", err)
 		return err
 	}
-	em.logger.Info(fmt.Sprintf("Elasticsearch returned with code %d and version %s\n", code, inf.Version.Number))
+	em.logger.Infof("Succesfully pinged ElasticSearch server with code %d and version %s", code, inf.Version.Number)
 
 	ex, err := em.Client.IndexExists(em.IndexName).Do(em.Context)
 	if err != nil {
@@ -104,18 +122,23 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 			em.logger.Error("Index creation not acknowledged")
 			return err
 		}
+		// Giving ES time to set up the Index
+		time.Sleep(1 * time.Second)
 	} else {
-		em.logger.Infof("Index %s found", em.IndexName)
+		em.logger.Infof("Index %s exist, skipping its creation", em.IndexName)
 	}
 
-	em.logger.Info("Elastic search init successfully")
+	em.currentBulkService = em.Client.Bulk()
+	em.currentBulkCalls = 1
+
+	em.Errchan = make(chan error)
+	em.Respchan = make(chan WorkerResponse)
 
 	return nil
 }
 
 // SendToElastic adds a compound instance into the Index
-func (em *ElasticManager) SendToElastic(c Compound, logger *zap.SugaredLogger) error {
-	logger.Debugw("Adding to index: ", "UCI", c.UCI, "sources", c.Sources)
+func (em *ElasticManager) SendToElastic(c Compound) error {
 
 	tmp := Compound{
 		Inchi:            c.Inchi,
@@ -126,16 +149,76 @@ func (em *ElasticManager) SendToElastic(c Compound, logger *zap.SugaredLogger) e
 
 	r, err := em.Client.Index().Index(em.IndexName).Type(em.TypeName).Id(c.UCI).BodyJson(tmp).Do(em.Context)
 	if err != nil {
-		logger.Panic("Error saving UCI", err)
+		em.logger.Panic("Error saving UCI", err)
 		return err
 	}
-	logger.Debugf("Added compound UCI <%s>", c.UCI)
+	em.logger.Debugf("Added compound UCI <%s>", c.UCI)
 
 	if r.Result == "updated" {
-		logger.Warn("ID UPDATED ", c.UCI)
+		em.logger.Warn("ID UPDATED ", c.UCI)
 	}
 
 	return nil
+}
+
+// AddToIndex fills a BulkRequest up to the limit setted up on the em.Bulklimit property
+func (em *ElasticManager) AddToIndex(c Compound) {
+	em.logger.Debugw("Adding to index: ", "UCI", c.UCI, "sources", c.Sources)
+
+	tmp := Compound{
+		Inchi:            c.Inchi,
+		StandardInchiKey: c.StandardInchiKey,
+		Sources:          c.Sources,
+		CreatedAt:        c.CreatedAt,
+	}
+
+	if em.countBulkRequest >= em.Bulklimit {
+
+		if em.currentBulkCalls < em.MaxBulkCalls {
+			em.currentBulkCalls++
+		} else {
+			// Wait for the MaxBulkCalls threads finish before continuing
+			em.logger.Debugf("Waiting for %d workers to finish", em.currentBulkCalls)
+			em.WaitGroup.Wait()
+			em.currentBulkCalls = 1
+		}
+
+		em.WaitGroup.Add(1)
+		go em.sendBulkRequest(em.Context, tmp, em.Errchan, em.Respchan, *em.currentBulkService, em.Bulklimit)
+
+		em.countBulkRequest = 0
+		em.currentBulkService = em.Client.Bulk()
+	} else {
+		t := elastic.NewBulkIndexRequest().Index(em.IndexName).Type(em.TypeName).Id(c.UCI).Doc(tmp)
+		em.currentBulkService = em.currentBulkService.Add(t)
+		em.countBulkRequest++
+	}
+}
+
+func (em *ElasticManager) sendBulkRequest(ctx context.Context, t Compound, ce chan error, cr chan WorkerResponse, cb elastic.BulkService, bl int) {
+	defer em.WaitGroup.Done()
+	time.Sleep(50 * time.Millisecond)
+	em.logger.Debug("INIT bulk worker: Started")
+	br, err := cb.Do(ctx)
+	if err != nil {
+		ce <- err
+	}
+	wr := WorkerResponse{
+		Succedded: len(br.Succeeded()),
+		Indexed:   len(br.Indexed()),
+		Created:   len(br.Created()),
+		Updated:   len(br.Updated()),
+		Failed:    len(br.Failed()),
+	}
+
+	if len(br.Succeeded()) == bl {
+		wr.IsSuccesful = true
+		cr <- wr
+	} else {
+		wr.IsSuccesful = false
+		cr <- wr
+	}
+	em.logger.Debug("END bulk worker")
 }
 
 //Close terminates the ElasticSearch Client and BulkProcessor

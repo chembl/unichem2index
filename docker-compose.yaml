@@ -19,18 +19,18 @@ services:
     cap_add:
       - IPC_LOCK
     volumes:
-      - ./elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml        
+      - ./dockerconfig/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml        
     ports:
       - 9200:9200
-  kibana:
-    image: docker.elastic.co/kibana/kibana:6.6.1
-    container_name: kibana
-    environment:
-      - SERVER_NAME=kibana
-      - SERVER_HOST=0.0.0.0
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-    ports:
-      - 5601:5601
+  # kibana:
+  #   image: docker.elastic.co/kibana/kibana:6.6.1
+  #   container_name: kibana
+  #   environment:
+  #     - SERVER_NAME=kibana
+  #     - SERVER_HOST=0.0.0.0
+  #     - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+  #   ports:
+  #     - 5601:5601
   unichem:
     build: Docker/.
     container_name: unichem
@@ -44,5 +44,5 @@ services:
   #     - 1521:1521
   #   shm_size: 2gb
   #   volumes:
-  #     - ./configure.sql:/docker-entrypoint-initdb.d/configure.sql
+  #     - ./dockerconfig/configure.sql:/docker-entrypoint-initdb.d/configure.sql
 

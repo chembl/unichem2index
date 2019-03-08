@@ -1,4 +1,4 @@
-module github.com/chembl/unichem-to-index
+module github.com/chembl/unichem2index
 
 go 1.12
 

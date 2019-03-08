@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/chembl/unichem-to-index/loader"
+	"github.com/chembl/unichem2index/loader"
 	_ "gopkg.in/goracle.v2"
 
 	"go.uber.org/zap"
@@ -19,33 +19,41 @@ var (
 
 // StartExtraction queries Unichem's db in order to extract the compounds
 // and to add them into the index using an ElasticManager
-func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn string) error {
+func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn string, queryLimit int) error {
 	logger = l
 
 	elasticManager = em
 
-	const (
-		limit         = 50
-		maxIterations = 2
-	)
 	var (
-		start     = 0
-		iteration = 0
+		limit = queryLimit
+		start int
 	)
 
-	var queryTemplate = `SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY, SRC_COMPOUND_ID, NAME
+	var queryTemplate = `SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
 	FROM (
 	  SELECT A.*, rownum rn
 	  FROM (
-		SELECT str.UCI, str.STANDARDINCHI, str.STANDARDINCHIKEY, xrf.SRC_COMPOUND_ID, so.NAME
-		FROM UC_STRUCTURE str, UC_XREF xrf, UC_SOURCE so
-		WHERE xrf.UCI = str.UCI
-		AND so.SRC_ID = xrf.SRC_ID
+		SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
+		FROM UC_STRUCTURE
 		ORDER BY UCI
 		) A
 	  WHERE rownum < %d)
 	WHERE rn >= %d
 	`
+
+	// var queryTemplate = `SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY, SRC_COMPOUND_ID, NAME
+	// FROM (
+	//   SELECT A.*, rownum rn
+	//   FROM (
+	// 	SELECT str.UCI, str.STANDARDINCHI, str.STANDARDINCHIKEY, xrf.SRC_COMPOUND_ID, so.NAME
+	// 	FROM UC_STRUCTURE str, UC_XREF xrf, UC_SOURCE so
+	// 	WHERE xrf.UCI = str.UCI
+	// 	AND so.SRC_ID = xrf.SRC_ID
+	// 	ORDER BY UCI
+	// 	) A
+	//   WHERE rownum < %d)
+	// WHERE rn >= %d
+	// `
 
 	db, err := sql.Open("goracle", oraconn)
 	if err != nil {
@@ -53,19 +61,17 @@ func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn st
 		return err
 	}
 	defer db.Close()
+	logger.Debug("Success connecting to Oracle DB")
 
 	hasResults := true
 
 	for hasResults {
-		var (
-			UCI, srcCompoundID, name        string
-			standardInchi, standardInchiKey string
-		)
+		var UCI, standardInchi, standardInchiKey string
 
 		query := fmt.Sprintf(queryTemplate, start+limit, start)
 
+		logger.Infof("INIT extracting structures: Fetching rows %d to %d", start, start+limit)
 		logger.Debug(query)
-
 		rows, err := db.Query(query)
 		if err != nil {
 			logger.Error("Error running query ", err)
@@ -73,29 +79,66 @@ func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn st
 		}
 		defer rows.Close()
 
+		logger.Info("Got rows")
 		fr := rows.Next()
 		if fr {
-			rows.Scan(&UCI, &standardInchi, &standardInchiKey, &srcCompoundID, &name)
-			addToIndex(UCI, standardInchi, standardInchiKey, srcCompoundID, name)
+			rows.Scan(&UCI, &standardInchi, &standardInchiKey)
+			c := loader.Compound{
+				UCI:              UCI,
+				Inchi:            standardInchi,
+				StandardInchiKey: standardInchiKey,
+				CreatedAt:        time.Now(),
+			}
+			elasticManager.AddToIndex(c)
 		} else {
 			hasResults = false
-			logger.Warn("Has results FALSE")
+			logger.Warnf("No rows found from %d and %d", start, start+limit)
 		}
 
 		for rows.Next() {
-			rows.Scan(&UCI, &standardInchi, &standardInchiKey, &srcCompoundID, &name)
-			addToIndex(UCI, standardInchi, standardInchiKey, srcCompoundID, name)
+			rows.Scan(&UCI, &standardInchi, &standardInchiKey)
+			c := loader.Compound{
+				UCI:              UCI,
+				Inchi:            standardInchi,
+				StandardInchiKey: standardInchiKey,
+				CreatedAt:        time.Now(),
+			}
+			elasticManager.AddToIndex(c)
 		}
 
+		logger.Infof("END extracting structures: Loaded rows %d to %d", start, start+limit)
 		start = start + limit
-
-		if iteration >= maxIterations {
-			break
-		} else {
-			logger.Info("Loaded first ", start)
-			iteration++
-		}
 	}
+
+	return nil
+}
+
+func fetchSources(db *sql.DB, c loader.Compound) error {
+	var srcCompoundID, name string
+	c.Sources = make([]loader.CompoundSource, 0)
+
+	sourcesQuery := `SELECT so.NAME, xr.SRC_COMPOUND_ID
+	FROM UC_XREF xr, UC_SOURCE so
+	WHERE UCI = '%s'
+	AND xr.SRC_ID = so.SRC_ID`
+
+	query := fmt.Sprintf(sourcesQuery, c.UCI)
+	logger.Debug("Quering sources for ", c.UCI)
+	rows, err := db.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		rows.Scan(&name, &srcCompoundID)
+		c.Sources = append(c.Sources, loader.CompoundSource{
+			ID:   srcCompoundID,
+			Name: name,
+		})
+	}
+
+	elasticManager.AddToIndex(c)
 
 	return nil
 }
@@ -127,7 +170,7 @@ func addToIndex(UCI, si, sik, sci, n string) {
 		})
 	} else {
 		logger.Debugf("New compound UCI <%s> adding previous one <%s> to index", UCI, currentCompound.UCI)
-		elasticManager.SendToElastic(currentCompound, logger)
+		elasticManager.AddToIndex(currentCompound)
 
 		currentCompound = loader.Compound{
 			UCI:              UCI,
