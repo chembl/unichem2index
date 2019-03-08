@@ -17,11 +17,6 @@ RUN apt-get -qq update && apt-get -y -qq upgrade && \
     echo "export LANG=en_US.UTF-8" >> ~/.bashrc && \
     echo "export LANGUAGE=en_US.UTF-8" >> ~/.bashrc
 
-RUN wget https://dl.google.com/go/go1.12.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go1.12.linux-amd64.tar.gz && \
-    rm -f go1.12.linux-amd64.tar.gz && \
-    echo "export PATH=$PATH:/usr/local/go/bin" >> ~/.bashrc
-
 WORKDIR ${UNICHEM_ORA_SETUP}
 ADD . ${UNICHEM_ORA_SETUP}
 
@@ -34,6 +29,7 @@ RUN dpkg -i oracle-instantclient*.deb && \
 
 RUN mv tnsnames.ora /usr/lib/oracle/18.3/client64
 
+RUN chmod 755 unichem2index
 RUN chmod 755 fireitup.sh
 
 EXPOSE 8000

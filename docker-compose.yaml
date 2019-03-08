@@ -35,8 +35,7 @@ services:
     build: Docker/.
     container_name: unichem
     image: arcebi/unichem2index
-    volumes:
-      - ./:/opt/unichem
+    entrypoint: ["./unichem2index", "-eshost='http://elastichost:9200'", "-oraconn=hr/hr@//oracledbhost:1541/XE"]
   # oradbxe:
   #   image: wnameless/oracle-xe-11g
   #   container_name: oradb

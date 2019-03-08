@@ -178,7 +178,7 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 			em.currentBulkCalls++
 		} else {
 			// Wait for the MaxBulkCalls threads finish before continuing
-			em.logger.Debugf("Waiting for %d workers to finish", em.currentBulkCalls)
+			em.logger.Infof("Waiting for %d workers to finish", em.currentBulkCalls)
 			em.WaitGroup.Wait()
 			em.currentBulkCalls = 1
 		}

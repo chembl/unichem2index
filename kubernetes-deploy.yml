@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ric-unichem2index
+  labels:
+    app: ric-unichem2index
+spec:
+  containers:
+  - name: ric-unichem2index
+    image: arcebi/unichem2index:latest
+    command: ["./unichem2index"]
+    args: ["-eshost='http://elastichost:9200'", "-oraconn=hr/hr@//oracledbhost:1541/XE"]
