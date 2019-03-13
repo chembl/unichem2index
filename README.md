@@ -8,9 +8,32 @@ After installing oracle's oracle-instaclient on your machine run:
 ```bash
 unichem2index -eshost="http://0.0.0.0:9200" -oraconn=hr/hr@localhost:1521:XE
 ```
+
+### Configuration File
+
+```
+# Oracle Connection String for Unichems DB
+oracleconn: 'hr/hr@oradb:1521/xe'
+
+# ElasticSearch host, index and type
+elastichost: 'http://elasticsearch:9200'
+index: Unichem
+type: Compound
+
+# Query parameters for extraction
+querystart: 2 # Starting number, useful to resume stoped extractions
+querylimit: 5 # Amount of records fetch on each query
+# Elastic Bulk add parameters
+bulklimit: 2 # Limit of records to add for each Bulk worker
+maxbulkcalls: 4 # Maximum number of worker at one time
+
+logpath: ''
+```
+
 ### Flags
-- **eshost** (Mandatory): ElasticSearch host, e.g.: ```-eshost="http://0.0.0.0:9200"```
-- **oraconn** (Mandatory): Oracle DB connection string, e.g.: ```-oraconn=hr/hr@localhost:1521:XE```
+
+- **eshost** (Mandatory): ElasticSearch host, e.g.: ```-eshost="http://0.0.0.0:9200"```. This will override the ES host on the config file.
+- **oraconn** (Mandatory): Oracle DB connection string, e.g.: ```-oraconn=hr/hr@localhost:1521:XE```. This will override the Oracle Connection Strin on the config file (oraclenconn).
 - **v**: Software version
 - **d**: Debug log level
 
@@ -33,4 +56,4 @@ Docker/oracle-instantclient18.3-basic-18.3.0.0.0-1.x86_64.rpm
 Docker/oracle-instantclient18.3-devel-18.3.0.0.0-1.x86_64.rpm
 Docker/oracle-instantclient18.3-sqlplus-18.3.0.0.0-1.x86_64.rpm
 ```
-
+Make sure to place your ```config.yaml``` file inside the Docker folder as well. [config.yaml example](config.yaml.example)

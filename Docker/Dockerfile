@@ -5,7 +5,7 @@ LABEL maintainer="arcila@ebi.ac.uk"
 ENV TNS_ADMIN=/usr/lib/oracle/18.3/client64 \
     ORACLE_HOME=/usr/lib/oracle/18.3/client64 \
     PATH=$PATH:/usr/lib/oracle/18.3/client64/bin:/usr/local/go/bin \
-    UNICHEM_ORA_SETUP=/opt/orasetup
+    UNICHEM=/opt/unichem
 
 SHELL ["/bin/bash", "-c"]
 
@@ -17,8 +17,8 @@ RUN apt-get -qq update && apt-get -y -qq upgrade && \
     echo "export LANG=en_US.UTF-8" >> ~/.bashrc && \
     echo "export LANGUAGE=en_US.UTF-8" >> ~/.bashrc
 
-WORKDIR ${UNICHEM_ORA_SETUP}
-ADD . ${UNICHEM_ORA_SETUP}
+WORKDIR ${UNICHEM}
+ADD . ${UNICHEM}
 
 RUN alien oracle-instantclient18.3-* && \
     rm -f oracle-instantclient*.rpm

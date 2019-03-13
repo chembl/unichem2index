@@ -1,0 +1,16 @@
+# Oracle Connection String for Unichems DB
+oracleconn: ''
+
+# ElasticSearch host, index and type
+elastichost: ''
+index: Unichem
+type: Compound
+
+# Query parameters for extraction
+querystart: 0 # Starting number, useful to resume stoped extractions
+querylimit: 200000 # Amount of records fetch on each query
+# Elastic Bulk add parameters
+bulklimit: 2000 # Limit of records to add for each Bulk worker
+maxbulkcalls: 20 # Maximum number of worker at one time
+
+logpath: '/var/log/'

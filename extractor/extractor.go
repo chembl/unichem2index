@@ -19,14 +19,14 @@ var (
 
 // StartExtraction queries Unichem's db in order to extract the compounds
 // and to add them into the index using an ElasticManager
-func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn string, queryLimit int) error {
+func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn string, queryLimit int, queryStart int) error {
 	logger = l
 
 	elasticManager = em
 
 	var (
 		limit = queryLimit
-		start int
+		start = queryStart
 	)
 
 	var queryTemplate = `SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
@@ -41,20 +41,6 @@ func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn st
 	WHERE rn >= %d
 	`
 
-	// var queryTemplate = `SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY, SRC_COMPOUND_ID, NAME
-	// FROM (
-	//   SELECT A.*, rownum rn
-	//   FROM (
-	// 	SELECT str.UCI, str.STANDARDINCHI, str.STANDARDINCHIKEY, xrf.SRC_COMPOUND_ID, so.NAME
-	// 	FROM UC_STRUCTURE str, UC_XREF xrf, UC_SOURCE so
-	// 	WHERE xrf.UCI = str.UCI
-	// 	AND so.SRC_ID = xrf.SRC_ID
-	// 	ORDER BY UCI
-	// 	) A
-	//   WHERE rownum < %d)
-	// WHERE rn >= %d
-	// `
-
 	db, err := sql.Open("goracle", oraconn)
 	if err != nil {
 		logger.Error("Go oracle open ERROR ", err)
@@ -63,9 +49,7 @@ func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn st
 	defer db.Close()
 	logger.Debug("Success connecting to Oracle DB")
 
-	hasResults := true
-
-	for hasResults {
+	for {
 		var UCI, standardInchi, standardInchiKey string
 
 		query := fmt.Sprintf(queryTemplate, start+limit, start)
@@ -79,7 +63,7 @@ func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn st
 		}
 		defer rows.Close()
 
-		logger.Info("Got rows")
+		logger.Info("Finished query")
 		fr := rows.Next()
 		if fr {
 			rows.Scan(&UCI, &standardInchi, &standardInchiKey)
@@ -91,8 +75,9 @@ func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn st
 			}
 			elasticManager.AddToIndex(c)
 		} else {
-			hasResults = false
 			logger.Warnf("No rows found from %d and %d", start, start+limit)
+			elasticManager.SendCurrentBulk()
+			break
 		}
 
 		for rows.Next() {

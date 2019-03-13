@@ -28,13 +28,13 @@ type Compound struct {
 
 // WorkerResponse contains the result of the BulkRequest to the ElasticSearch index
 type WorkerResponse struct {
-	Succedded   int
-	Indexed     int
-	Created     int
-	Updated     int
-	Deleted     int
-	Failed      int
-	IsSuccesful bool
+	Succedded    int
+	Indexed      int
+	Created      int
+	Updated      int
+	Deleted      int
+	Failed       int
+	BulkResponse *elastic.BulkResponse
 }
 
 // ElasticManager used for connection and adding compounds to the
@@ -74,18 +74,6 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 					},
 					"standard_inchi_key": {
 						"type": "keyword"
-					},
-					"sources": {
-						"type": "nested",
-						"properties": {
-							"compound_id": {
-								"type": "keyword",
-								"copy_to": "known_ids"
-							},
-							"source_name": {
-								"type": "keyword"
-							}
-						}
 					}
 				}
 			}
@@ -96,6 +84,10 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 		elastic.SetURL(host),
 		elastic.SetSniff(false),
 	)
+	if err != nil {
+		em.logger.Panic("Error connecting to ElasticSearch ", err)
+		return err
+	}
 
 	inf, code, err := em.Client.Ping(host).Do(em.Context)
 	if err != nil {
@@ -172,6 +164,9 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 		CreatedAt:        c.CreatedAt,
 	}
 
+	t := elastic.NewBulkIndexRequest().Index(em.IndexName).Type(em.TypeName).Id(c.UCI).Doc(tmp)
+	em.currentBulkService = em.currentBulkService.Add(t)
+
 	if em.countBulkRequest >= em.Bulklimit {
 
 		if em.currentBulkCalls < em.MaxBulkCalls {
@@ -184,18 +179,24 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 		}
 
 		em.WaitGroup.Add(1)
-		go em.sendBulkRequest(em.Context, tmp, em.Errchan, em.Respchan, *em.currentBulkService, em.Bulklimit)
+		go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, *em.currentBulkService)
 
 		em.countBulkRequest = 0
 		em.currentBulkService = em.Client.Bulk()
 	} else {
-		t := elastic.NewBulkIndexRequest().Index(em.IndexName).Type(em.TypeName).Id(c.UCI).Doc(tmp)
-		em.currentBulkService = em.currentBulkService.Add(t)
 		em.countBulkRequest++
 	}
 }
 
-func (em *ElasticManager) sendBulkRequest(ctx context.Context, t Compound, ce chan error, cr chan WorkerResponse, cb elastic.BulkService, bl int) {
+//SendCurrentBulk throught a worker, useful for cleaning the requests stored on the BulkService
+//regardles the BulkLimit has been reached or not
+func (em *ElasticManager) SendCurrentBulk() {
+	em.WaitGroup.Add(1)
+	em.logger.Warn("Sending last bulk")
+	go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, *em.currentBulkService)
+}
+
+func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr chan WorkerResponse, cb elastic.BulkService) {
 	defer em.WaitGroup.Done()
 	time.Sleep(50 * time.Millisecond)
 	em.logger.Debug("INIT bulk worker: Started")
@@ -204,20 +205,14 @@ func (em *ElasticManager) sendBulkRequest(ctx context.Context, t Compound, ce ch
 		ce <- err
 	}
 	wr := WorkerResponse{
-		Succedded: len(br.Succeeded()),
-		Indexed:   len(br.Indexed()),
-		Created:   len(br.Created()),
-		Updated:   len(br.Updated()),
-		Failed:    len(br.Failed()),
+		Succedded:    len(br.Succeeded()),
+		Indexed:      len(br.Indexed()),
+		Created:      len(br.Created()),
+		Updated:      len(br.Updated()),
+		Failed:       len(br.Failed()),
+		BulkResponse: br,
 	}
-
-	if len(br.Succeeded()) == bl {
-		wr.IsSuccesful = true
-		cr <- wr
-	} else {
-		wr.IsSuccesful = false
-		cr <- wr
-	}
+	cr <- wr
 	em.logger.Debug("END bulk worker")
 }
 
