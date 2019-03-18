@@ -63,22 +63,34 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 
 	mapping := `{
 		"mappings": {
-			"compound": {
+		  "compound": {
+			"properties": {
+			  "uci": {
+				"type": "keyword",
+				"copy_to": "known_ids"
+			  },
+			  "inchi": {
+				"type": "keyword"
+			  },
+			  "standard_inchi_key": {
+				"type": "keyword"
+			  },
+			  "sources": {
+				"type": "nested",
 				"properties": {
-					"uci": {
-						"type": "keyword",
-						"copy_to": "known_ids"
-					},
-					"inchi": {
-						"type": "keyword"
-					},
-					"standard_inchi_key": {
-						"type": "keyword"
-					}
+				  "compound_id": {
+					"type": "keyword",
+					"copy_to": "known_ids"
+				  },
+				  "source_name": {
+					"type": "keyword"
+				  }
 				}
+			  }
 			}
+		  }
 		}
-	}`
+	  }`
 
 	em.Client, err = elastic.NewClient(
 		elastic.SetURL(host),
@@ -168,7 +180,7 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 	em.currentBulkService = em.currentBulkService.Add(t)
 
 	if em.countBulkRequest >= em.Bulklimit {
-
+		em.logger.Infof("Got %d sending BulkRequest", em.countBulkRequest)
 		if em.currentBulkCalls < em.MaxBulkCalls {
 			em.currentBulkCalls++
 		} else {

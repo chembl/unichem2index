@@ -29,17 +29,7 @@ func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn st
 		start = queryStart
 	)
 
-	var queryTemplate = `SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
-	FROM (
-	  SELECT A.*, rownum rn
-	  FROM (
-		SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
-		FROM UC_STRUCTURE
-		ORDER BY UCI
-		) A
-	  WHERE rownum < %d)
-	WHERE rn >= %d
-	`
+	logger.Infof("Start: %d Limit %d", start, limit)
 
 	db, err := sql.Open("goracle", oraconn)
 	if err != nil {
@@ -48,6 +38,96 @@ func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn st
 	}
 	defer db.Close()
 	logger.Debug("Success connecting to Oracle DB")
+
+	// err = queryInBUlk(db, start, limit)
+	// if err != nil {
+	// 	return nil
+	// }
+
+	err = queryByOne(db, start)
+	if err != nil {
+		return nil
+	}
+
+	return nil
+}
+
+func queryByOne(db *sql.DB, start int) error {
+	var queryTemplate = `SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
+	FROM UC_STRUCTURE
+	WHERE UCI > %d
+	`
+	query := fmt.Sprintf(queryTemplate, start)
+	var UCI, standardInchi, standardInchiKey string
+
+	logger.Info("INIT extracting structures")
+	logger.Debug(query)
+	rows, err := db.Query(query)
+	if err != nil {
+		logger.Error("Error running query ", err)
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		rows.Scan(&UCI, &standardInchi, &standardInchiKey)
+		c := loader.Compound{
+			UCI:              UCI,
+			Inchi:            standardInchi,
+			StandardInchiKey: standardInchiKey,
+			CreatedAt:        time.Now(),
+		}
+		// err := fetchSources(db, c)
+		// if err != nil {
+		// 	return nil
+		// }
+		elasticManager.AddToIndex(c)
+	}
+	elasticManager.SendCurrentBulk()
+	return nil
+}
+
+func fetchSources(db *sql.DB, c loader.Compound) error {
+	var srcCompoundID, name string
+	c.Sources = make([]loader.CompoundSource, 0)
+
+	sourcesQuery := `SELECT so.NAME, xr.SRC_COMPOUND_ID
+	FROM UC_XREF xr, UC_SOURCE so
+	WHERE UCI = '%s'
+	AND xr.SRC_ID = so.SRC_ID`
+
+	query := fmt.Sprintf(sourcesQuery, c.UCI)
+	logger.Debug("Quering sources for ", c.UCI)
+	rows, err := db.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		rows.Scan(&name, &srcCompoundID)
+		c.Sources = append(c.Sources, loader.CompoundSource{
+			ID:   srcCompoundID,
+			Name: name,
+		})
+	}
+
+	elasticManager.AddToIndex(c)
+
+	return nil
+}
+
+func queryInBUlk(db *sql.DB, start, limit int) error {
+	var queryTemplate = `SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
+	FROM (
+	  SELECT A.*, rownum rn
+	  FROM (
+		SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
+		FROM UC_STRUCTURE
+		) A
+	  WHERE rownum < %d)
+	WHERE rn >= %d
+	`
 
 	for {
 		var UCI, standardInchi, standardInchiKey string
@@ -94,36 +174,6 @@ func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn st
 		logger.Infof("END extracting structures: Loaded rows %d to %d", start, start+limit)
 		start = start + limit
 	}
-
-	return nil
-}
-
-func fetchSources(db *sql.DB, c loader.Compound) error {
-	var srcCompoundID, name string
-	c.Sources = make([]loader.CompoundSource, 0)
-
-	sourcesQuery := `SELECT so.NAME, xr.SRC_COMPOUND_ID
-	FROM UC_XREF xr, UC_SOURCE so
-	WHERE UCI = '%s'
-	AND xr.SRC_ID = so.SRC_ID`
-
-	query := fmt.Sprintf(sourcesQuery, c.UCI)
-	logger.Debug("Quering sources for ", c.UCI)
-	rows, err := db.Query(query)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		rows.Scan(&name, &srcCompoundID)
-		c.Sources = append(c.Sources, loader.CompoundSource{
-			ID:   srcCompoundID,
-			Name: name,
-		})
-	}
-
-	elasticManager.AddToIndex(c)
 
 	return nil
 }

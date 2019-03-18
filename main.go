@@ -216,6 +216,6 @@ func main() {
 }
 
 func timeElapsed(t time.Time) {
-	e :=  time.Since(t)
-	logger.Infof("Elapsed %s Failed: %d", e, *failedWorkersCount)
+	e := time.Since(t)
+	logger.Infof("Elapsed %s Failed: %d", e, failedWorkersCount)
 }
