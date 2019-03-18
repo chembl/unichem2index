@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -44,12 +45,79 @@ func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn st
 	// 	return nil
 	// }
 
-	err = queryByOne(db, start)
+	err = queryByOneWithSources(db, start)
 	if err != nil {
 		return nil
 	}
 
 	return nil
+}
+
+func queryByOneWithSources(db *sql.DB, start int) error {
+	ctx := context.Background()
+
+	var queryTemplate = `SELECT str.UCI, str.STANDARDINCHI, str.STANDARDINCHIKEY, xrf.SRC_COMPOUND_ID, so.NAME
+	FROM UC_STRUCTURE str, UC_XREF xrf, UC_SOURCE so
+	WHERE str.UCI > %d
+	AND str.UCI = xrf.UCI
+	AND so.SRC_ID = xrf.SRC_ID
+	`
+	query := fmt.Sprintf(queryTemplate, start)
+	var UCI, standardInchi, standardInchiKey, srcCompoundID, name string
+
+	logger.Info("INIT extracting structures")
+	logger.Debug(query)
+
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		logger.Error("Error running query ", err)
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		rows.Scan(&UCI, &standardInchi, &standardInchiKey, &srcCompoundID, &name)
+		c := loader.Compound{
+			UCI:              UCI,
+			Inchi:            standardInchi,
+			StandardInchiKey: standardInchiKey,
+			CreatedAt:        time.Now(),
+		}
+		addToIndex(c, srcCompoundID, name)
+	}
+	elasticManager.SendCurrentBulk()
+	return nil
+}
+
+func addToIndex(c loader.Compound, sci, n string) {
+	logger.Debugf("Found UCI <%s> Source ID %s Name %s", c.UCI, sci, n)
+
+	if currentCompound.UCI == "" {
+		c.Sources = append(c.Sources, loader.CompoundSource{
+			ID:   sci,
+			Name: n,
+		})
+		currentCompound = c
+		return
+	}
+
+	if currentCompound.UCI == c.UCI {
+		logger.Debug("UCI matches current compound: ", currentCompound.UCI)
+		currentCompound.Sources = append(currentCompound.Sources, loader.CompoundSource{
+			ID:   sci,
+			Name: n,
+		})
+	} else {
+		logger.Debugf("New compound UCI <%s> adding previous one <%s> to index", c.UCI, currentCompound.UCI)
+		elasticManager.AddToIndex(currentCompound)
+
+		c.Sources = append(c.Sources, loader.CompoundSource{
+			ID:   sci,
+			Name: n,
+		})
+
+		currentCompound = c
+	}
 }
 
 func queryByOne(db *sql.DB, start int) error {
@@ -176,48 +244,4 @@ func queryInBUlk(db *sql.DB, start, limit int) error {
 	}
 
 	return nil
-}
-
-func addToIndex(UCI, si, sik, sci, n string) {
-	logger.Debugf("Found UCI <%s> Source ID %s Name %s", UCI, sci, n)
-
-	if currentCompound.UCI == "" {
-		currentCompound = loader.Compound{
-			UCI:              UCI,
-			Inchi:            si,
-			StandardInchiKey: sik,
-			Sources: []loader.CompoundSource{
-				loader.CompoundSource{
-					ID:   sci,
-					Name: n,
-				},
-			},
-			CreatedAt: time.Now(),
-		}
-		return
-	}
-
-	if currentCompound.UCI == UCI {
-		logger.Debug("UCI matches current compound: ", currentCompound.UCI)
-		currentCompound.Sources = append(currentCompound.Sources, loader.CompoundSource{
-			ID:   sci,
-			Name: n,
-		})
-	} else {
-		logger.Debugf("New compound UCI <%s> adding previous one <%s> to index", UCI, currentCompound.UCI)
-		elasticManager.AddToIndex(currentCompound)
-
-		currentCompound = loader.Compound{
-			UCI:              UCI,
-			Inchi:            si,
-			StandardInchiKey: sik,
-			Sources: []loader.CompoundSource{
-				loader.CompoundSource{
-					ID:   sci,
-					Name: n,
-				},
-			},
-			CreatedAt: time.Now(),
-		}
-	}
 }

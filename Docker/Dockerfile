@@ -27,7 +27,8 @@ RUN dpkg -i oracle-instantclient*.deb && \
     echo /usr/lib/oracle/18.3/client64/lib > /etc/ld.so.conf.d/oracle-instantclient18.3.conf && \
     ldconfig
 
-RUN mv tnsnames.ora /usr/lib/oracle/18.3/client64
+RUN mv tnsnames.ora ${TNS_ADMIN}}} && \
+    mv sqlnet.ora ${TNS_ADMIN}}}
 
 RUN chmod 755 unichem2index
 RUN chmod 755 fireitup.sh

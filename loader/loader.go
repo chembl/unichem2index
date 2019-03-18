@@ -133,7 +133,8 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 	}
 
 	em.currentBulkService = em.Client.Bulk()
-	em.currentBulkCalls = 1
+	em.currentBulkCalls = 0
+	em.countBulkRequest = 0
 
 	em.Errchan = make(chan error)
 	em.Respchan = make(chan WorkerResponse)
@@ -176,28 +177,29 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 		CreatedAt:        c.CreatedAt,
 	}
 
-	t := elastic.NewBulkIndexRequest().Index(em.IndexName).Type(em.TypeName).Id(c.UCI).Doc(tmp)
-	em.currentBulkService = em.currentBulkService.Add(t)
-
-	if em.countBulkRequest >= em.Bulklimit {
+	if em.countBulkRequest < em.Bulklimit {
+		em.countBulkRequest++
+	} else {
 		em.logger.Infof("Got %d sending BulkRequest", em.countBulkRequest)
 		if em.currentBulkCalls < em.MaxBulkCalls {
 			em.currentBulkCalls++
 		} else {
 			// Wait for the MaxBulkCalls threads finish before continuing
-			em.logger.Infof("Waiting for %d workers to finish", em.currentBulkCalls)
+			em.logger.Infof("Hitting %d workers to send. Waiting for %d to finish", em.currentBulkCalls, em.MaxBulkCalls)
 			em.WaitGroup.Wait()
-			em.currentBulkCalls = 1
+			em.currentBulkCalls = 0
 		}
 
 		em.WaitGroup.Add(1)
 		go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, *em.currentBulkService)
 
-		em.countBulkRequest = 0
+		em.countBulkRequest = 1
 		em.currentBulkService = em.Client.Bulk()
-	} else {
-		em.countBulkRequest++
 	}
+
+	t := elastic.NewBulkIndexRequest().Index(em.IndexName).Type(em.TypeName).Id(c.UCI).Doc(tmp)
+	em.currentBulkService = em.currentBulkService.Add(t)
+
 }
 
 //SendCurrentBulk throught a worker, useful for cleaning the requests stored on the BulkService
@@ -215,6 +217,7 @@ func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr
 	br, err := cb.Do(ctx)
 	if err != nil {
 		ce <- err
+		return
 	}
 	wr := WorkerResponse{
 		Succedded:    len(br.Succeeded()),
