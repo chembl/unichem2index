@@ -6,242 +6,127 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/chembl/unichem2index/loader"
-	_ "gopkg.in/goracle.v2"
-
 	"go.uber.org/zap"
 )
 
-var (
-	elasticManager  *loader.ElasticManager
-	currentCompound loader.Compound
-	logger          *zap.SugaredLogger
-)
+//Extractor connects to the given oracle string connection (Oraconn), fetch
+//the unichem data and adds it into the index using the ElasticManager provided
+type Extractor struct {
+	ElasticManager         *ElasticManager
+	Oraconn                string
+	QueryLimit, QueryStart int
+	//CurrentCompound contains the current compound being added to the loader
+	CurrentCompound *Compound
+	Logger          *zap.SugaredLogger
 
-// StartExtraction queries Unichem's db in order to extract the compounds
-// and to add them into the index using an ElasticManager
-func StartExtraction(em *loader.ElasticManager, l *zap.SugaredLogger, oraconn string, queryLimit int, queryStart int) error {
-	logger = l
+	db *sql.DB
+}
 
-	elasticManager = em
+// Start extracting unichem data by querying Unichem's db
+// and adds them into the index using a provided ElasticManager
+func (ex *Extractor) Start() error {
+	logger := ex.Logger
 
-	var (
-		limit = queryLimit
-		start = queryStart
-	)
+	var err error
 
-	logger.Infof("Start: %d Limit %d", start, limit)
+	logger.Infof("Fetching from:%d to %d", ex.QueryStart, ex.QueryLimit)
 
-	db, err := sql.Open("goracle", oraconn)
+	ex.db, err = sql.Open("goracle", ex.Oraconn)
 	if err != nil {
 		logger.Error("Go oracle open ERROR ", err)
 		return err
 	}
-	defer db.Close()
-	logger.Debug("Success connecting to Oracle DB")
+	defer ex.db.Close()
+	logger.Info("Success connecting to Oracle DB")
 
-	// err = queryInBUlk(db, start, limit)
-	// if err != nil {
-	// 	return nil
-	// }
-
-	err = queryByOneWithSources(db, start)
+	err = ex.queryByOneWithSources()
 	if err != nil {
-		return nil
+		return err
 	}
 
 	return nil
 }
 
-func queryByOneWithSources(db *sql.DB, start int) error {
+func (ex *Extractor) queryByOneWithSources() error {
+	logger := ex.Logger
+
 	ctx := context.Background()
 
-	var queryTemplate = `SELECT str.UCI, str.STANDARDINCHI, str.STANDARDINCHIKEY, xrf.SRC_COMPOUND_ID, so.NAME
-	FROM UC_STRUCTURE str, UC_XREF xrf, UC_SOURCE so
-	WHERE str.UCI > %d
-	AND str.UCI = xrf.UCI
-	AND so.SRC_ID = xrf.SRC_ID
+	var queryTemplate = `SELECT str.UCI, str.STANDARDINCHI, str.STANDARDINCHIKEY, xrf.SRC_COMPOUND_ID, xrf.NAME
+	FROM (
+	  SELECT xrf.UCI, xrf.SRC_COMPOUND_ID, so.NAME
+	  FROM UC_XREF xrf, UC_SOURCE so
+	  WHERE xrf.UCI >= %d
+	  AND xrf.UCI <= %d ) xrf, UC_STRUCTURE str
+	WHERE xrf.UCI = str.UCI
 	`
-	query := fmt.Sprintf(queryTemplate, start)
+
+	query := fmt.Sprintf(queryTemplate, ex.QueryStart, ex.QueryLimit)
+
 	var UCI, standardInchi, standardInchiKey, srcCompoundID, name string
+	logger.Debug("Query: ", query)
 
-	logger.Info("INIT extracting structures")
-	logger.Debug(query)
-
-	rows, err := db.QueryContext(ctx, query)
+	rows, err := ex.db.QueryContext(ctx, query)
 	if err != nil {
 		logger.Error("Error running query ", err)
 		return err
 	}
 	defer rows.Close()
-
+	logger.Info("Success, got rows")
+	var c Compound
 	for rows.Next() {
 		rows.Scan(&UCI, &standardInchi, &standardInchiKey, &srcCompoundID, &name)
-		c := loader.Compound{
+		c = Compound{
 			UCI:              UCI,
 			Inchi:            standardInchi,
 			StandardInchiKey: standardInchiKey,
 			CreatedAt:        time.Now(),
 		}
-		addToIndex(c, srcCompoundID, name)
+		ex.addToIndex(c, srcCompoundID, name)
 	}
-	elasticManager.SendCurrentBulk()
+	ex.ElasticManager.AddToIndex(*ex.CurrentCompound)
+	ex.ElasticManager.SendCurrentBulk()
 	return nil
 }
 
-func addToIndex(c loader.Compound, sci, n string) {
+func (ex *Extractor) addToIndex(c Compound, sci, n string) {
+	logger := ex.Logger
+
 	logger.Debugf("Found UCI <%s> Source ID %s Name %s", c.UCI, sci, n)
 
-	if currentCompound.UCI == "" {
-		c.Sources = append(c.Sources, loader.CompoundSource{
+	if ex.CurrentCompound == nil {
+		c.Sources = append(c.Sources, CompoundSource{
 			ID:   sci,
 			Name: n,
 		})
-		currentCompound = c
+		ex.CurrentCompound = &c
 		return
 	}
 
-	if currentCompound.UCI == c.UCI {
-		logger.Debug("UCI matches current compound: ", currentCompound.UCI)
-		currentCompound.Sources = append(currentCompound.Sources, loader.CompoundSource{
+	if ex.CurrentCompound.UCI == c.UCI {
+		logger.Debug("UCI matches current compound: ", ex.CurrentCompound.UCI)
+		ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, CompoundSource{
 			ID:   sci,
 			Name: n,
 		})
 	} else {
-		logger.Debugf("New compound UCI <%s> adding previous one <%s> to index", c.UCI, currentCompound.UCI)
-		elasticManager.AddToIndex(currentCompound)
+		logger.Debugf("New compound UCI <%s> adding previous one <%s> to index", c.UCI, ex.CurrentCompound.UCI)
+		ex.ElasticManager.AddToIndex(*ex.CurrentCompound)
 
-		c.Sources = append(c.Sources, loader.CompoundSource{
+		c.Sources = append(c.Sources, CompoundSource{
 			ID:   sci,
 			Name: n,
 		})
 
-		currentCompound = c
+		ex.CurrentCompound = &c
 	}
 }
 
-func queryByOne(db *sql.DB, start int) error {
-	var queryTemplate = `SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
-	FROM UC_STRUCTURE
-	WHERE UCI > %d
-	`
-	query := fmt.Sprintf(queryTemplate, start)
-	var UCI, standardInchi, standardInchiKey string
-
-	logger.Info("INIT extracting structures")
-	logger.Debug(query)
-	rows, err := db.Query(query)
-	if err != nil {
-		logger.Error("Error running query ", err)
-		return err
+//PrintLastCompound logs the latest compound, if any, to be send to the loader
+func (ex *Extractor) PrintLastCompound() {
+	if ex.CurrentCompound == nil {
+		ex.Logger.Warn("No current compound")
+	} else {
+		ex.Logger.Warn("Last compound ", ex.CurrentCompound.UCI)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		rows.Scan(&UCI, &standardInchi, &standardInchiKey)
-		c := loader.Compound{
-			UCI:              UCI,
-			Inchi:            standardInchi,
-			StandardInchiKey: standardInchiKey,
-			CreatedAt:        time.Now(),
-		}
-		// err := fetchSources(db, c)
-		// if err != nil {
-		// 	return nil
-		// }
-		elasticManager.AddToIndex(c)
-	}
-	elasticManager.SendCurrentBulk()
-	return nil
-}
-
-func fetchSources(db *sql.DB, c loader.Compound) error {
-	var srcCompoundID, name string
-	c.Sources = make([]loader.CompoundSource, 0)
-
-	sourcesQuery := `SELECT so.NAME, xr.SRC_COMPOUND_ID
-	FROM UC_XREF xr, UC_SOURCE so
-	WHERE UCI = '%s'
-	AND xr.SRC_ID = so.SRC_ID`
-
-	query := fmt.Sprintf(sourcesQuery, c.UCI)
-	logger.Debug("Quering sources for ", c.UCI)
-	rows, err := db.Query(query)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		rows.Scan(&name, &srcCompoundID)
-		c.Sources = append(c.Sources, loader.CompoundSource{
-			ID:   srcCompoundID,
-			Name: name,
-		})
-	}
-
-	elasticManager.AddToIndex(c)
-
-	return nil
-}
-
-func queryInBUlk(db *sql.DB, start, limit int) error {
-	var queryTemplate = `SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
-	FROM (
-	  SELECT A.*, rownum rn
-	  FROM (
-		SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
-		FROM UC_STRUCTURE
-		) A
-	  WHERE rownum < %d)
-	WHERE rn >= %d
-	`
-
-	for {
-		var UCI, standardInchi, standardInchiKey string
-
-		query := fmt.Sprintf(queryTemplate, start+limit, start)
-
-		logger.Infof("INIT extracting structures: Fetching rows %d to %d", start, start+limit)
-		logger.Debug(query)
-		rows, err := db.Query(query)
-		if err != nil {
-			logger.Error("Error running query ", err)
-			return err
-		}
-		defer rows.Close()
-
-		logger.Info("Finished query")
-		fr := rows.Next()
-		if fr {
-			rows.Scan(&UCI, &standardInchi, &standardInchiKey)
-			c := loader.Compound{
-				UCI:              UCI,
-				Inchi:            standardInchi,
-				StandardInchiKey: standardInchiKey,
-				CreatedAt:        time.Now(),
-			}
-			elasticManager.AddToIndex(c)
-		} else {
-			logger.Warnf("No rows found from %d and %d", start, start+limit)
-			elasticManager.SendCurrentBulk()
-			break
-		}
-
-		for rows.Next() {
-			rows.Scan(&UCI, &standardInchi, &standardInchiKey)
-			c := loader.Compound{
-				UCI:              UCI,
-				Inchi:            standardInchi,
-				StandardInchiKey: standardInchiKey,
-				CreatedAt:        time.Now(),
-			}
-			elasticManager.AddToIndex(c)
-		}
-
-		logger.Infof("END extracting structures: Loaded rows %d to %d", start, start+limit)
-		start = start + limit
-	}
-
-	return nil
 }

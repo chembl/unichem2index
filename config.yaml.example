@@ -7,10 +7,10 @@ index: Unichem
 type: Compound
 
 # Query parameters for extraction
-querystart: 2 # Starting number, useful to resume stoped extractions
-querylimit: 5 # Amount of records fetch on each query
+querystart: 0 # Starting UCI, useful to resume stoped extractions
+querylimit: 50000000 # Maximum UCI to fetch
 # Elastic Bulk add parameters
-bulklimit: 2 # Limit of records to add for each Bulk worker
-maxbulkcalls: 4 # Maximum number of worker at one time
+bulklimit: 2000 # Limit of records to add for each Bulk worker
+maxbulkcalls: 20 # Maximum number of worker at one time
 
 logpath: ''

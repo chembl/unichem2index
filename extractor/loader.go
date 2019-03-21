@@ -1,4 +1,4 @@
-package loader
+package extractor
 
 import (
 	"context"
@@ -142,30 +142,6 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 	return nil
 }
 
-// SendToElastic adds a compound instance into the Index
-func (em *ElasticManager) SendToElastic(c Compound) error {
-
-	tmp := Compound{
-		Inchi:            c.Inchi,
-		StandardInchiKey: c.StandardInchiKey,
-		Sources:          c.Sources,
-		CreatedAt:        c.CreatedAt,
-	}
-
-	r, err := em.Client.Index().Index(em.IndexName).Type(em.TypeName).Id(c.UCI).BodyJson(tmp).Do(em.Context)
-	if err != nil {
-		em.logger.Panic("Error saving UCI", err)
-		return err
-	}
-	em.logger.Debugf("Added compound UCI <%s>", c.UCI)
-
-	if r.Result == "updated" {
-		em.logger.Warn("ID UPDATED ", c.UCI)
-	}
-
-	return nil
-}
-
 // AddToIndex fills a BulkRequest up to the limit setted up on the em.Bulklimit property
 func (em *ElasticManager) AddToIndex(c Compound) {
 	em.logger.Debugw("Adding to index: ", "UCI", c.UCI, "sources", c.Sources)
@@ -212,7 +188,6 @@ func (em *ElasticManager) SendCurrentBulk() {
 
 func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr chan WorkerResponse, cb elastic.BulkService) {
 	defer em.WaitGroup.Done()
-	time.Sleep(50 * time.Millisecond)
 	em.logger.Debug("INIT bulk worker: Started")
 	br, err := cb.Do(ctx)
 	if err != nil {
