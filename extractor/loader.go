@@ -156,7 +156,7 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 	if em.countBulkRequest < em.Bulklimit {
 		em.countBulkRequest++
 	} else {
-		em.logger.Infof("Got %d sending BulkRequest", em.countBulkRequest)
+		em.logger.Infof("Got %d sending BulkRequest. New Bulk starting from: %s", em.countBulkRequest, c.UCI)
 		if em.currentBulkCalls < em.MaxBulkCalls {
 			em.currentBulkCalls++
 		} else {
@@ -181,8 +181,8 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 //SendCurrentBulk throught a worker, useful for cleaning the requests stored on the BulkService
 //regardles the BulkLimit has been reached or not
 func (em *ElasticManager) SendCurrentBulk() {
-	em.WaitGroup.Add(1)
 	em.logger.Warn("Sending last bulk")
+	em.WaitGroup.Add(1)
 	go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, *em.currentBulkService)
 }
 

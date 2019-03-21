@@ -4,52 +4,55 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
 )
 
 var (
-	logger             *zap.SugaredLogger
-	config             *Configuration
-	failedWorkersCount *int
+	config *Configuration
+	wg     sync.WaitGroup
 )
 
 //Init sets up exractors and loaders
-func Init(l *zap.SugaredLogger, con *Configuration, eh, oraconn string) {
-	logger = l
-	config = con
+func Init(l *zap.SugaredLogger, cn *Configuration) {
+	ti := time.Now()
+
+	var extractors []*Extractor
+
+	for _, r := range cn.QueryRanges {
+		if r.Finish <= 0 {
+			l.Panic("QueryLimit must be a number higher than 0")
+		}
+		ex := Extractor{
+			Oraconn:    cn.OracleConn,
+			QueryStart: r.Start,
+			QueryLimit: r.Finish,
+			Logger:     l,
+		}
+		l.Infof("Sending extractor from %d to %d", r.Start, r.Finish)
+		wg.Add(1)
+		go sendExtractor(l, cn, &ex)
+		extractors = append(extractors, &ex)
+	}
+	waitForSignal(l, ti, extractors)
+	wg.Wait()
+	elapsedTime(l, ti)
+}
+
+func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor) {
+	defer wg.Done()
+	logger := l
 	var err error
 
-	em, err := getElasticManager(eh)
+	em, err := getElasticManager(l, cn)
 	if err != nil {
 		logger.Error("Error create elastic manager ", err)
 	}
 	defer em.Close()
 
-	logger.Info("Fetching Unichem DB")
-	if config.QueryLimit <= 0 {
-		logger.Panic("QueryLimit must be a number higher than 0")
-	}
-
-	ex := Extractor{
-		ElasticManager: em,
-		Oraconn:        oraconn,
-		QueryStart:     config.QueryStart,
-		QueryLimit:     config.QueryLimit,
-		Logger:         logger,
-	}
-	ti := time.Now()
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		<-c
-		logger.Warn("Received Interrupt Signal")
-		ex.PrintLastCompound()
-		elapsedTime(ti)
-		os.Exit(1)
-	}()
+	ex.ElasticManager = em
 
 	go func() {
 		for r := range em.Respchan {
@@ -65,6 +68,8 @@ func Init(l *zap.SugaredLogger, con *Configuration, eh, oraconn string) {
 				r.Indexed,
 				"Failed",
 				r.Failed,
+				"Current",
+				ex.CurrentCompound.UCI,
 			)
 
 			if r.BulkResponse.Errors {
@@ -76,38 +81,36 @@ func Init(l *zap.SugaredLogger, con *Configuration, eh, oraconn string) {
 					logger.Error("Caused  by: ", it.Error.CausedBy)
 					logger.Error("ID with error ", it.Id)
 				}
-				*failedWorkersCount++
 			}
 		}
 	}()
 
 	go func() {
 		for e := range em.Errchan {
-			ex.PrintLastCompound()
+			logger.Warn("For worker started on %d Last UCI compound: %s", ex.QueryStart, ex.CurrentCompound.UCI)
 			logger.Panic("Got error from bulk ", e)
 		}
 	}()
 
 	err = ex.Start()
 	if err != nil {
-		ex.PrintLastCompound()
+		logger.Warn("For worker started on %d Last UCI compound: %s", ex.QueryStart, ex.CurrentCompound.UCI)
 		logger.Panic("Extractor error ", err)
 	}
-	logger.Infof("Finished extacting waiting for loader to finish")
-	ex.PrintLastCompound()
+	logger.Infof("Finished worker started with UCI %d waiting for loader to finish. Last UCI compound: %s", ex.QueryStart, ex.CurrentCompound.UCI)
 	em.WaitGroup.Wait()
-	elapsedTime(ti)
 }
 
-func getElasticManager(eh string) (*ElasticManager, error) {
+func getElasticManager(l *zap.SugaredLogger, cn *Configuration) (*ElasticManager, error) {
+	logger := l
 
 	ctx := context.Background()
 
-	if config.BulkLimit <= 0 {
+	if cn.BulkLimit <= 0 {
 		logger.Panic("BulkLimit must be a number higher than 0")
 	}
 
-	if config.MaxBulkCalls <= 0 {
+	if cn.MaxBulkCalls <= 0 {
 		logger.Panic("MaxBulkCalls must be a number higher than 0")
 	}
 
@@ -115,11 +118,11 @@ func getElasticManager(eh string) (*ElasticManager, error) {
 		Context:      ctx,
 		IndexName:    "unichem",
 		TypeName:     "compound",
-		Bulklimit:    config.BulkLimit,
-		MaxBulkCalls: config.MaxBulkCalls,
+		Bulklimit:    cn.BulkLimit,
+		MaxBulkCalls: cn.MaxBulkCalls,
 	}
 
-	err := es.Init(eh, logger)
+	err := es.Init(cn.ElasticHost, logger)
 	if err != nil {
 		logger.Error("Error init ElasticManager ", err)
 		return nil, err
@@ -129,7 +132,23 @@ func getElasticManager(eh string) (*ElasticManager, error) {
 
 }
 
-func elapsedTime(t time.Time) {
+func waitForSignal(l *zap.SugaredLogger, t time.Time, exs []*Extractor) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		<-c
+		l.Warn("Received Interrupt Signal")
+		for _, ex := range exs {
+			l.Warnf("For worker started on %d Last compound UCI: %s", ex.QueryStart, ex.CurrentCompound.UCI)
+		}
+		elapsedTime(l, t)
+		os.Exit(1)
+	}()
+}
+
+func elapsedTime(l *zap.SugaredLogger, t time.Time) {
+	logger := l
 	e := time.Since(t)
-	logger.Infof("Elapsed %s Failed: %d", e, failedWorkersCount)
+	logger.Infof("Elapsed %s", e)
 }

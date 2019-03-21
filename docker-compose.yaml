@@ -38,7 +38,7 @@ services:
     volumes:
       - ./build/unichem2index.log:/var/log/unichem2index.log
       - ./config.yaml:/opt/unichem/config.yaml
-    entrypoint: ["./unichem2index", "-eshost=http://elastichost:9200", "-oraconn=hr/hr@//oracledbhost:1541/XE"]
+    entrypoint: ["./unichem2index"]
   # oradbxe:
   #   image: wnameless/oracle-xe-11g
   #   container_name: oradb

@@ -6,6 +6,11 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+//Range UCI for concurrent queries
+type Range struct {
+	Start, Finish int
+}
+
 //Configuration stores the configuration parameters required for the application
 type Configuration struct {
 	LogPath      string
@@ -17,6 +22,7 @@ type Configuration struct {
 	Index        string
 	Type         string
 	MaxBulkCalls int
+	QueryRanges  []Range
 }
 
 //LoadConfig opening a yaml config file (config.yaml)

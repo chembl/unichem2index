@@ -92,19 +92,17 @@ func main() {
 		config.MaxBulkCalls,
 	)
 
-	if len(*eh) <= 0 {
-		eh = &config.ElasticHost
-		if len(*eh) <= 0 {
-			logger.Panic("Please provide the ElasticSearch host")
-		}
+	if len(*eh) > 0 {
+		config.ElasticHost = *eh
+	} else if len(config.ElasticHost) <= 0 {
+		logger.Panic("Please provide an ElasticSearch host")
 	}
-	logger.Info("Elastic host ", *eh)
+	logger.Info("Elastic host ", config.ElasticHost)
 
-	if len(*oraconn) <= 0 {
-		oraconn = &config.OracleConn
-		if len(*oraconn) <= 0 {
-			logger.Panic("Please provide a Oracle Connection string")
-		}
+	if len(*oraconn) > 0 {
+		config.OracleConn = *oraconn
+	} else if len(config.OracleConn) <= 0 {
+		logger.Panic("Please provide an Oracle Connection string")
 	}
 	logger.Info("Oracle connection string ", *oraconn)
 
@@ -112,7 +110,7 @@ func main() {
 		return
 	}
 
-	extractor.Init(logger, config, *eh, *oraconn)
+	extractor.Init(logger, config)
 
 	logger.Info("End of process")
 }

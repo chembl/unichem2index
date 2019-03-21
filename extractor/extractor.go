@@ -72,6 +72,7 @@ func (ex *Extractor) queryByOneWithSources() error {
 		return err
 	}
 	defer rows.Close()
+
 	logger.Info("Success, got rows")
 	var c Compound
 	for rows.Next() {
@@ -83,7 +84,9 @@ func (ex *Extractor) queryByOneWithSources() error {
 			CreatedAt:        time.Now(),
 		}
 		ex.addToIndex(c, srcCompoundID, name)
+		// time.Sleep(1 * time.Millisecond)
 	}
+
 	ex.ElasticManager.AddToIndex(*ex.CurrentCompound)
 	ex.ElasticManager.SendCurrentBulk()
 	return nil
