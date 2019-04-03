@@ -6,11 +6,16 @@ elastichost: 'http://elasticsearch:9200'
 index: Unichem
 type: Compound
 
-# Query parameters for extraction
-querystart: 0 # Starting UCI, useful to resume stoped extractions
-querylimit: 50000000 # Maximum UCI to fetch
+queryranges:
+  - start: 6500000
+    finish: 499999999
+  - start: 56300000
+    finish: 99999999
+  - start: 106400000
+    finish: 160000000
+
 # Elastic Bulk add parameters
 bulklimit: 2000 # Limit of records to add for each Bulk worker
-maxbulkcalls: 20 # Maximum number of worker at one time
+maxbulkcalls: 13 # Maximum number of worker at one time
 
 logpath: ''

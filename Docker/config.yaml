@@ -6,11 +6,16 @@ elastichost: ''
 index: Unichem
 type: Compound
 
-# Query parameters for extraction
-querystart: 0 # Starting number, useful to resume stoped extractions
-querylimit: 200000 # Amount of records fetch on each query
+queryranges:
+  - start: 0
+    finish: 50000000
+  - start: 50000000
+    finish: 100000000
+  - start: 100000000
+    finish: 160000000
+
 # Elastic Bulk add parameters
 bulklimit: 2000 # Limit of records to add for each Bulk worker
-maxbulkcalls: 20 # Maximum number of worker at one time
+maxbulkcalls: 13 # Maximum number of worker at one time
 
-logpath: '/var/log/'
+logpath: ''

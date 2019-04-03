@@ -16,8 +16,6 @@ type Configuration struct {
 	LogPath      string
 	OracleConn   string
 	ElasticHost  string
-	QueryStart   int
-	QueryLimit   int
 	BulkLimit    int
 	Index        string
 	Type         string

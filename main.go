@@ -68,6 +68,7 @@ func main() {
 
 	config, err = extractor.LoadConfig()
 	if err != nil {
+		fmt.Println(err)
 		panic("Couldn't load config.yml file")
 	}
 
@@ -82,10 +83,8 @@ func main() {
 		config.Index,
 		"ES type",
 		config.Type,
-		"Query start",
-		config.QueryStart,
-		"Query limit",
-		config.QueryLimit,
+		"Query range",
+		config.QueryRanges,
 		"Bulk limit",
 		config.BulkLimit,
 		"Maximum Bulk calls",

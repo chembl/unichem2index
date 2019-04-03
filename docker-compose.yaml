@@ -36,8 +36,8 @@ services:
     container_name: unichem
     image: arcebi/unichem2index
     volumes:
-      - ./build/unichem2index.log:/var/log/unichem2index.log
-      - ./config.yaml:/opt/unichem/config.yaml
+      - ./build/unichem2index.log:/opt/unichem/unichem2index.log
+      - ./build/config.yaml:/opt/unichem/config.yaml
     entrypoint: ["./unichem2index"]
   # oradbxe:
   #   image: wnameless/oracle-xe-11g

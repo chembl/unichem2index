@@ -11,30 +11,31 @@ import (
 )
 
 var (
-	config *Configuration
 	wg     sync.WaitGroup
 )
 
 //Init sets up exractors and loaders
-func Init(l *zap.SugaredLogger, cn *Configuration) {
+func Init(l *zap.SugaredLogger, conf *Configuration) {
 	ti := time.Now()
 
 	var extractors []*Extractor
 
-	for _, r := range cn.QueryRanges {
+	for _, r := range conf.QueryRanges {
 		if r.Finish <= 0 {
 			l.Panic("QueryLimit must be a number higher than 0")
 		}
 		ex := Extractor{
-			Oraconn:    cn.OracleConn,
+			Oraconn:    conf.OracleConn,
 			QueryStart: r.Start,
 			QueryLimit: r.Finish,
 			Logger:     l,
 		}
 		l.Infof("Sending extractor from %d to %d", r.Start, r.Finish)
 		wg.Add(1)
-		go sendExtractor(l, cn, &ex)
+		go sendExtractor(l, conf, &ex)
 		extractors = append(extractors, &ex)
+
+		time.Sleep(300 * time.Millisecond)
 	}
 	waitForSignal(l, ti, extractors)
 	wg.Wait()
@@ -77,10 +78,14 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor) {
 			}
 			if r.Failed > 0 {
 				logger.Error("Failed records on bulk")
+				ids := ""
+				reasons := ""
 				for _, it := range r.BulkResponse.Failed() {
-					logger.Error("Caused  by: ", it.Error.CausedBy)
-					logger.Error("ID with error ", it.Id)
+					ids = ids + "," + it.Id
+					reasons = reasons + " " + it.Error.Reason
 				}
+				logger.Error("IDs with error ", ids)
+				logger.Error("Reasons: ", reasons)
 			}
 		}
 	}()

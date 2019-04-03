@@ -52,18 +52,15 @@ func (ex *Extractor) queryByOneWithSources() error {
 
 	ctx := context.Background()
 
-	var queryTemplate = `SELECT str.UCI, str.STANDARDINCHI, str.STANDARDINCHIKEY, xrf.SRC_COMPOUND_ID, xrf.NAME
-	FROM (
-	  SELECT xrf.UCI, xrf.SRC_COMPOUND_ID, so.NAME
-	  FROM UC_XREF xrf, UC_SOURCE so
-	  WHERE xrf.UCI >= %d
-	  AND xrf.UCI <= %d ) xrf, UC_STRUCTURE str
-	WHERE xrf.UCI = str.UCI
-	`
+	var queryTemplate = `SELECT uc.UCI, uc.STANDARDINCHI, uc.STANDARDINCHIKEY, pa.PARENT_SMILES
+        FROM UC_INCHI uc, SS_PARENTS pa
+        WHERE uc.UCI >= %d
+        AND uc.UCI < %d
+        AND uc.UCI = pa.UCI`
 
 	query := fmt.Sprintf(queryTemplate, ex.QueryStart, ex.QueryLimit)
 
-	var UCI, standardInchi, standardInchiKey, srcCompoundID, name string
+	var UCI, standardInchi, standardInchiKey, smiles string
 	logger.Debug("Query: ", query)
 
 	rows, err := ex.db.QueryContext(ctx, query)
@@ -76,18 +73,24 @@ func (ex *Extractor) queryByOneWithSources() error {
 	logger.Info("Success, got rows")
 	var c Compound
 	for rows.Next() {
-		rows.Scan(&UCI, &standardInchi, &standardInchiKey, &srcCompoundID, &name)
+		err := rows.Scan(&UCI, &standardInchi, &standardInchiKey, &smiles)
+		logger.Debugw("Row:", "UCI", UCI, "standarInchi", standardInchi, "standarInchiKey", standardInchiKey, "smiles", smiles)
+		if err != nil {
+			logger.Error("Error reading line")
+			return err
+		}
 		c = Compound{
 			UCI:              UCI,
 			Inchi:            standardInchi,
 			StandardInchiKey: standardInchiKey,
+			Smiles:           smiles,
 			CreatedAt:        time.Now(),
 		}
-		ex.addToIndex(c, srcCompoundID, name)
-		// time.Sleep(1 * time.Millisecond)
+		ex.CurrentCompound = &c
+		ex.ElasticManager.AddToIndex(c)
+		//time.Sleep(500 * time.Millisecond)
 	}
 
-	ex.ElasticManager.AddToIndex(*ex.CurrentCompound)
 	ex.ElasticManager.SendCurrentBulk()
 	return nil
 }
@@ -122,14 +125,5 @@ func (ex *Extractor) addToIndex(c Compound, sci, n string) {
 		})
 
 		ex.CurrentCompound = &c
-	}
-}
-
-//PrintLastCompound logs the latest compound, if any, to be send to the loader
-func (ex *Extractor) PrintLastCompound() {
-	if ex.CurrentCompound == nil {
-		ex.Logger.Warn("No current compound")
-	} else {
-		ex.Logger.Warn("Last compound ", ex.CurrentCompound.UCI)
 	}
 }

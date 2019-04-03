@@ -22,6 +22,7 @@ type Compound struct {
 	UCI              string           `json:"uci,omitempty"`
 	Inchi            string           `json:"inchi"`
 	StandardInchiKey string           `json:"standard_inchi_key"`
+	Smiles           string           `json:"smiles"`
 	Sources          []CompoundSource `json:"sources,omitempty"`
 	CreatedAt        time.Time        `json:"created_at"`
 }
@@ -62,35 +63,31 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 	var err error
 
 	mapping := `{
-		"mappings": {
-		  "compound": {
-			"properties": {
-			  "uci": {
-				"type": "keyword",
-				"copy_to": "known_ids"
-			  },
-			  "inchi": {
-				"type": "keyword"
-			  },
-			  "standard_inchi_key": {
-				"type": "keyword"
-			  },
-			  "sources": {
-				"type": "nested",
-				"properties": {
-				  "compound_id": {
-					"type": "keyword",
-					"copy_to": "known_ids"
-				  },
-				  "source_name": {
-					"type": "keyword"
-				  }
-				}
-			  }
-			}
-		  }
-		}
-	  }`
+    "index": {
+        "refresh_interval": -1,
+        "number_of_replicas": 0,
+        "number_of_shards": 15
+    },
+    "mappings": {
+        "compound": {
+            "properties": {
+                "uci": {
+                    "type": "keyword",
+                    "copy_to": "known_ids"
+                },
+                "inchi": {
+                    "type": "keyword"
+                },
+                "standard_inchi_key": {
+                    "type": "keyword"
+                },
+                "smiles": {
+                    "type": "keyword"
+                }
+            }
+        }
+    }
+}`
 
 	em.Client, err = elastic.NewClient(
 		elastic.SetURL(host),
@@ -144,12 +141,20 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 
 // AddToIndex fills a BulkRequest up to the limit setted up on the em.Bulklimit property
 func (em *ElasticManager) AddToIndex(c Compound) {
-	em.logger.Debugw("Adding to index: ", "UCI", c.UCI, "sources", c.Sources)
+	em.logger.Debugw(
+		"Adding to index: ",
+		"UCI",
+		c.UCI,
+		"Smiles",
+		c.Smiles,
+		"sources",
+		c.Sources)
 
 	tmp := Compound{
 		Inchi:            c.Inchi,
 		StandardInchiKey: c.StandardInchiKey,
 		Sources:          c.Sources,
+		Smiles:           c.Smiles,
 		CreatedAt:        c.CreatedAt,
 	}
 
