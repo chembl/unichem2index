@@ -57,52 +57,61 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor) {
 
 	go func() {
 		for r := range em.Respchan {
-			logger.Infow(
-				"WORKER RESPONSE:",
-				"Succedded",
-				r.Succedded,
-				"Created",
-				r.Created,
-				"Updated",
-				r.Updated,
-				"Indexed",
-				r.Indexed,
-				"Failed",
-				r.Failed,
-				"Current",
-				ex.CurrentCompound.UCI,
-			)
 
 			if r.BulkResponse.Errors {
 				logger.Error("Bulk response reported errors")
+			} else {
+				s := r.BulkResponse.Succeeded()
+
+				logger.Infow(
+					"WORKER_RESPONSE",
+					"succeeded",
+					r.Succedded,
+					"indexed",
+					r.Indexed,
+					"failed",
+					r.Failed,
+					"Took",
+					r.BulkResponse.Took,
+					"extractorStarted",
+					ex.QueryStart,
+					"lastSucceeded",
+					s[len(s) - 1].Id,
+				)
 			}
 			if r.Failed > 0 {
 				logger.Error("Failed records on bulk")
 				ids := ""
 				reasons := ""
+				fr :=  r.BulkResponse.Failed()
+				logger.Error(fr[0].Error.Reason)
+
 				for _, it := range r.BulkResponse.Failed() {
 					ids = ids + "," + it.Id
 					reasons = reasons + " " + it.Error.Reason
 				}
+
 				logger.Error("IDs with error ", ids)
-				logger.Error("Reasons: ", reasons)
+				logger.Debug("Reasons: ", reasons)
 			}
 		}
 	}()
 
 	go func() {
 		for e := range em.Errchan {
-			logger.Warn("For worker started on %d Last UCI compound: %s", ex.QueryStart, ex.CurrentCompound.UCI)
-			logger.Panic("Got error from bulk ", e)
+			logger.Panicf("For worker started on %d Got error from bulk %s", ex.QueryStart, e)
 		}
 	}()
 
 	err = ex.Start()
 	if err != nil {
-		logger.Warn("For worker started on %d Last UCI compound: %s", ex.QueryStart, ex.CurrentCompound.UCI)
+		logger.Warn("For worker started on %d", ex.QueryStart)
 		logger.Panic("Extractor error ", err)
 	}
-	logger.Infof("Finished worker started with UCI %d waiting for loader to finish. Last UCI compound: %s", ex.QueryStart, ex.CurrentCompound.UCI)
+	if ex.CurrentCompound != nil {
+		logger.Infof("Last compound %s of worker started whit %d", ex.CurrentCompound.UCI, ex.QueryStart)
+	}
+	logger.Infof("Finished worker started with UCI %d waiting for loader to finish", ex.QueryStart)
 	em.WaitGroup.Wait()
 }
 

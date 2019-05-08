@@ -161,12 +161,12 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 	if em.countBulkRequest < em.Bulklimit {
 		em.countBulkRequest++
 	} else {
-		em.logger.Infof("Got %d sending BulkRequest. New Bulk starting from: %s", em.countBulkRequest, c.UCI)
+		em.logger.Debugf("Got %d sending BulkRequest. New Bulk starting from: %s", em.countBulkRequest, c.UCI)
 		if em.currentBulkCalls < em.MaxBulkCalls {
 			em.currentBulkCalls++
 		} else {
 			// Wait for the MaxBulkCalls threads finish before continuing
-			em.logger.Infof("Hitting %d workers to send. Waiting for %d to finish", em.currentBulkCalls, em.MaxBulkCalls)
+			em.logger.Infof("Hitting %d workers to send. Waiting for them to finish. Last UCI: %s", em.currentBulkCalls, c.UCI)
 			em.WaitGroup.Wait()
 			em.currentBulkCalls = 0
 		}

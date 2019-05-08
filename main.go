@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/chembl/unichem2index/extractor"
 	"go.uber.org/zap"
@@ -22,8 +23,9 @@ var (
 )
 
 func logInit(d bool, logPath string) *os.File {
-
-	path := filepath.Join(logPath, "unichem2index.log")
+	now := time.Now()
+	fn := fmt.Sprintf("unichem2index_%s.log", now.Format("20060102_150405"))
+	path := filepath.Join(logPath, fn)
 	fmt.Println("Path to log ", path)
 	// Open file for writing
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0777)
@@ -103,7 +105,7 @@ func main() {
 	} else if len(config.OracleConn) <= 0 {
 		logger.Panic("Please provide an Oracle Connection string")
 	}
-	logger.Info("Oracle connection string ", *oraconn)
+	logger.Info("Oracle connection string ", config.OracleConn)
 
 	if *v {
 		return
