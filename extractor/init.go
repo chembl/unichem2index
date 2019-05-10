@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 			QueryStart: r.Start,
 			QueryLimit: r.Finish,
 			Logger:     l,
+			LastIdAdded: 0,
 		}
 		l.Infof("Sending extractor from %d to %d", r.Start, r.Finish)
 		wg.Add(1)
@@ -43,6 +45,7 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 }
 
 func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor) {
+
 	defer wg.Done()
 	logger := l
 	var err error
@@ -62,7 +65,7 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor) {
 				logger.Error("Bulk response reported errors")
 			} else {
 				s := r.BulkResponse.Succeeded()
-
+				lastSucceded := s[len(s) - 1]
 				logger.Infow(
 					"WORKER_RESPONSE",
 					"succeeded",
@@ -76,8 +79,18 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor) {
 					"extractorStarted",
 					ex.QueryStart,
 					"lastSucceeded",
-					s[len(s) - 1].Id,
+					lastSucceded.Id,
 				)
+
+				i, err := strconv.Atoi(lastSucceded.Id)
+				if err != nil {
+					logger.Panic("Error turning ID into int")
+				}
+
+				if ex.LastIdAdded < i {
+					ex.LastIdAdded = i
+				}
+
 			}
 			if r.Failed > 0 {
 				logger.Error("Failed records on bulk")
@@ -105,13 +118,10 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor) {
 
 	err = ex.Start()
 	if err != nil {
-		logger.Warn("For worker started on %d", ex.QueryStart)
+		logger.Warnf("For worker started on %d.", ex.QueryStart)
 		logger.Panic("Extractor error ", err)
 	}
-	if ex.CurrentCompound != nil {
-		logger.Infof("Last compound %s of worker started whit %d", ex.CurrentCompound.UCI, ex.QueryStart)
-	}
-	logger.Infof("Finished worker started with UCI %d waiting for loader to finish", ex.QueryStart)
+	logger.Infof("Finished worker started with UCI %d waiting for loader to finish. Last ID: %d", ex.QueryStart, ex.LastIdAdded)
 	em.WaitGroup.Wait()
 }
 
@@ -154,7 +164,7 @@ func waitForSignal(l *zap.SugaredLogger, t time.Time, exs []*Extractor) {
 		<-c
 		l.Warn("Received Interrupt Signal")
 		for _, ex := range exs {
-			l.Warnf("For worker started on %d Last compound UCI: %s", ex.QueryStart, ex.CurrentCompound.UCI)
+			l.Warnf("For worker started on %d Last compound UCI: %d", ex.QueryStart, ex.LastIdAdded)
 		}
 		elapsedTime(l, t)
 		os.Exit(1)

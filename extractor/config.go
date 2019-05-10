@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"fmt"
 	"io/ioutil"
 
 	"gopkg.in/yaml.v2"
@@ -24,11 +25,20 @@ type Configuration struct {
 }
 
 //LoadConfig opening a yaml config file (config.yaml)
-func LoadConfig() (*Configuration, error) {
+func LoadConfig(c string) (*Configuration, error) {
 
 	var t Configuration
+	var fn string
 
-	data, err := ioutil.ReadFile("config.yaml")
+	if len(c) > 0 {
+		fn = c
+	} else {
+		fn = "config.yaml"
+	}
+
+	fmt.Printf("Using config path: %s \n", fn)
+
+	data, err := ioutil.ReadFile(fn)
 	if err != nil {
 		return &t, err
 	}

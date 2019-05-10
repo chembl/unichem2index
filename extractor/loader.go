@@ -172,7 +172,7 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 		}
 
 		em.WaitGroup.Add(1)
-		go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, *em.currentBulkService)
+		go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, em.currentBulkService)
 
 		em.countBulkRequest = 1
 		em.currentBulkService = em.Client.Bulk()
@@ -188,10 +188,10 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 func (em *ElasticManager) SendCurrentBulk() {
 	em.logger.Warn("Sending last bulk")
 	em.WaitGroup.Add(1)
-	go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, *em.currentBulkService)
+	go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, em.currentBulkService)
 }
 
-func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr chan WorkerResponse, cb elastic.BulkService) {
+func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr chan WorkerResponse, cb *elastic.BulkService) {
 	defer em.WaitGroup.Done()
 	em.logger.Debug("INIT bulk worker: Started")
 	br, err := cb.Do(ctx)

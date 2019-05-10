@@ -26,7 +26,7 @@ func logInit(d bool, logPath string) *os.File {
 	now := time.Now()
 	fn := fmt.Sprintf("unichem2index_%s.log", now.Format("20060102_150405"))
 	path := filepath.Join(logPath, fn)
-	fmt.Println("Path to log ", path)
+	fmt.Println("Log path ", path)
 	// Open file for writing
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0777)
 	if err != nil {
@@ -60,6 +60,7 @@ func logInit(d bool, logPath string) *os.File {
 
 func main() {
 
+	cn := flag.String("config", "", "Config file path, must be YAML")
 	d := flag.Bool("d", false, "Sets up the log level to debug, keep in mind logging will have an impact on the performance")
 	v := flag.Bool("v", false, "Returns the binary version and built date info")
 	eh := flag.String("eshost", "", "ElasticSearch host, Example: http://0.0.0.0:9200")
@@ -68,7 +69,7 @@ func main() {
 
 	var err error
 
-	config, err = extractor.LoadConfig()
+	config, err = extractor.LoadConfig(*cn)
 	if err != nil {
 		fmt.Println(err)
 		panic("Couldn't load config.yml file")

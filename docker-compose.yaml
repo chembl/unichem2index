@@ -34,11 +34,11 @@ services:
   unichem:
     build: Docker/.
     container_name: unichem
-    image: arcebi/unichem2index
+    image: chembl/unichem2index
     volumes:
-      - ./build/unichem2index.log:/opt/unichem/unichem2index.log
+      - ./build/logs/:/opt/unichem/build/logs/
       - ./build/config.yaml:/opt/unichem/config.yaml
-    entrypoint: ["./unichem2index"]
+    entrypoint: ["./unichem2index", "-config=/opt/unichem/config.yaml", "-v"]
   # oradbxe:
   #   image: wnameless/oracle-xe-11g
   #   container_name: oradb

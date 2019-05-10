@@ -15,11 +15,11 @@ type Extractor struct {
 	ElasticManager         *ElasticManager
 	Oraconn                string
 	QueryLimit, QueryStart int
+	Logger                 *zap.SugaredLogger
+	LastIdAdded            int
+	db                     *sql.DB
 	//CurrentCompound contains the current compound being added to the loader
 	CurrentCompound *Compound
-	Logger          *zap.SugaredLogger
-
-	db *sql.DB
 }
 
 // Start extracting unichem data by querying Unichem's db
@@ -53,10 +53,10 @@ func (ex *Extractor) queryByOneWithSources() error {
 	ctx := context.Background()
 
 	var queryTemplate = `SELECT uc.UCI, uc.STANDARDINCHI, uc.STANDARDINCHIKEY, pa.PARENT_SMILES
-       FROM UC_INCHI uc, SS_PARENTS pa
-       WHERE uc.UCI >= %d
-       AND uc.UCI < %d
-       AND uc.UCI = pa.UCI`
+	  FROM UC_INCHI uc, SS_PARENTS pa
+	  WHERE uc.UCI >= %d
+	  AND uc.UCI < %d
+	  AND uc.UCI = pa.UCI`
 
 	query := fmt.Sprintf(queryTemplate, ex.QueryStart, ex.QueryLimit)
 

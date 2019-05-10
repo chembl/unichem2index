@@ -32,7 +32,7 @@ func main(){
 
 	fmt.Println("Test start")
 
-	f, err := os.Open("csv_file2M.csv")
+	f, err := os.Open("test_files/csv_file2M.csv")
 	if err != nil {
 		fmt.Println("error reading file bru")
 	}
