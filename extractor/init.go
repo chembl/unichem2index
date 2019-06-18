@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	wg     sync.WaitGroup
+	wg sync.WaitGroup
 )
 
 //Init sets up exractors and loaders
@@ -26,10 +26,11 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 			l.Panic("QueryLimit must be a number higher than 0")
 		}
 		ex := Extractor{
-			Oraconn:    conf.OracleConn,
-			QueryStart: r.Start,
-			QueryLimit: r.Finish,
-			Logger:     l,
+			Oraconn:     conf.OracleConn,
+			Query:       conf.Query,
+			QueryStart:  r.Start,
+			QueryLimit:  r.Finish,
+			Logger:      l,
 			LastIdAdded: 0,
 		}
 		l.Infof("Sending extractor from %d to %d", r.Start, r.Finish)
@@ -65,7 +66,7 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor) {
 				logger.Error("Bulk response reported errors")
 			} else {
 				s := r.BulkResponse.Succeeded()
-				lastSucceded := s[len(s) - 1]
+				lastSucceded := s[len(s)-1]
 				logger.Infow(
 					"WORKER_RESPONSE",
 					"succeeded",
@@ -96,7 +97,7 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor) {
 				logger.Error("Failed records on bulk")
 				ids := ""
 				reasons := ""
-				fr :=  r.BulkResponse.Failed()
+				fr := r.BulkResponse.Failed()
 				logger.Error(fr[0].Error.Reason)
 
 				for _, it := range r.BulkResponse.Failed() {

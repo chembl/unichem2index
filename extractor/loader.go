@@ -12,8 +12,12 @@ import (
 // CompoundSource is the source where the unichem database extracted that
 // compound
 type CompoundSource struct {
-	ID   string `json:"compound_id"`
-	Name string `json:"source_name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	LongName string `json:"long_name"`
+	SourceID string `json:"source_id"`
+	Description string `json:"description"`
+	BaseUrl string `json:"base_url"`
 }
 
 // Compound is an structure describing the information to be indexed
@@ -66,7 +70,7 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
     "index": {
         "refresh_interval": -1,
         "number_of_replicas": 0,
-        "number_of_shards": 15
+        "number_of_shards": 20
     },
     "mappings": {
         "compound": {
@@ -161,7 +165,7 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 	if em.countBulkRequest < em.Bulklimit {
 		em.countBulkRequest++
 	} else {
-		em.logger.Debugf("Got %d sending BulkRequest. New Bulk starting from: %s", em.countBulkRequest, c.UCI)
+		em.logger.Infof("Got %d sending BulkRequest. New Bulk starting from: %s", em.countBulkRequest, c.UCI)
 		if em.currentBulkCalls < em.MaxBulkCalls {
 			em.currentBulkCalls++
 		} else {
@@ -187,8 +191,12 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 //regardles the BulkLimit has been reached or not
 func (em *ElasticManager) SendCurrentBulk() {
 	em.logger.Warn("Sending last bulk")
-	em.WaitGroup.Add(1)
-	go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, em.currentBulkService)
+	if em.currentBulkService.NumberOfActions() > 0 {
+		em.WaitGroup.Add(1)
+		go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, em.currentBulkService)
+	} else {
+		em.logger.Warn("No actions on current bulk service, skipping last bulk")
+	}
 }
 
 func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr chan WorkerResponse, cb *elastic.BulkService) {

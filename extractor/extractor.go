@@ -14,17 +14,22 @@ import (
 type Extractor struct {
 	ElasticManager         *ElasticManager
 	Oraconn                string
+	Query                  string
 	QueryLimit, QueryStart int
 	Logger                 *zap.SugaredLogger
 	LastIdAdded            int
 	db                     *sql.DB
 	//CurrentCompound contains the current compound being added to the loader
-	CurrentCompound *Compound
+	PreviousCompound Compound
+	CurrentCompound  Compound
 }
 
 // Start extracting unichem data by querying Unichem's db
 // and adds them into the index using a provided ElasticManager
 func (ex *Extractor) Start() error {
+	ex.PreviousCompound = Compound{UCI: ""}
+	ex.CurrentCompound = Compound{UCI: ""}
+
 	logger := ex.Logger
 
 	var err error
@@ -52,15 +57,15 @@ func (ex *Extractor) queryByOneWithSources() error {
 
 	ctx := context.Background()
 
-	var queryTemplate = `SELECT uc.UCI, uc.STANDARDINCHI, uc.STANDARDINCHIKEY, pa.PARENT_SMILES
-	  FROM UC_INCHI uc, SS_PARENTS pa
-	  WHERE uc.UCI >= %d
-	  AND uc.UCI < %d
-	  AND uc.UCI = pa.UCI`
+	var queryTemplate = ex.Query
 
 	query := fmt.Sprintf(queryTemplate, ex.QueryStart, ex.QueryLimit)
 
-	var UCI, standardInchi, standardInchiKey, smiles string
+	var (
+		UCI, standardInchi, standardInchiKey, smiles                        string
+		srcCompoundId, srcID, srcNameLong, srcName, srcDescription, srcBaseUrl string
+	)
+
 	logger.Debug("Query: ", query)
 
 	rows, err := ex.db.QueryContext(ctx, query)
@@ -73,12 +78,32 @@ func (ex *Extractor) queryByOneWithSources() error {
 	logger.Info("Success, got rows")
 	var c Compound
 	for rows.Next() {
-		err := rows.Scan(&UCI, &standardInchi, &standardInchiKey, &smiles)
-		logger.Debugw("Row:", "UCI", UCI, "standarInchi", standardInchi, "standarInchiKey", standardInchiKey, "smiles", smiles)
+		err := rows.Scan(
+			&UCI,
+			&standardInchi,
+			&standardInchiKey,
+			&smiles,
+			&srcCompoundId,
+			&srcID,
+			&srcNameLong,
+			&srcName,
+			&srcDescription,
+			&srcBaseUrl)
 		if err != nil {
 			logger.Error("Error reading line")
 			return err
 		}
+		logger.Debugw(
+			"Row:",
+			"UCI", UCI,
+			"standarInchi", standardInchi,
+			"standarInchiKey", standardInchiKey,
+			"smiles", smiles,
+			"srcCompoundId", srcCompoundId,
+			"srcID", srcID,
+			"srcName", srcName,
+		)
+
 		c = Compound{
 			UCI:              UCI,
 			Inchi:            standardInchi,
@@ -86,44 +111,43 @@ func (ex *Extractor) queryByOneWithSources() error {
 			Smiles:           smiles,
 			CreatedAt:        time.Now(),
 		}
-		ex.CurrentCompound = &c
-		ex.ElasticManager.AddToIndex(c)
+		ex.CurrentCompound = c
+		//ex.ElasticManager.AddToIndex(c)
+		ex.addToIndex(CompoundSource{
+			ID:   srcID,
+			Name: srcName,
+			LongName: srcNameLong,
+			SourceID: srcCompoundId,
+			Description: srcDescription,
+			BaseUrl: srcBaseUrl,
+		})
 		//time.Sleep(500 * time.Millisecond)
 	}
 
+	logger.Debugf("Sending last bulk for extractor started on %d", ex.QueryStart)
 	ex.ElasticManager.SendCurrentBulk()
 	return nil
 }
 
-func (ex *Extractor) addToIndex(c Compound, sci, n string) {
+func (ex *Extractor) addToIndex(source CompoundSource) {
 	logger := ex.Logger
 
-	logger.Debugf("Found UCI <%s> Source ID %s Name %s", c.UCI, sci, n)
+	logger.Debugf("Found UCI <%s> Source ID %s Name %s", ex.CurrentCompound.UCI, source.ID, source.Name)
 
-	if ex.CurrentCompound == nil {
-		c.Sources = append(c.Sources, CompoundSource{
-			ID:   sci,
-			Name: n,
-		})
-		ex.CurrentCompound = &c
+	if ex.PreviousCompound.UCI == "" {
+		ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
+		ex.PreviousCompound = ex.CurrentCompound
 		return
 	}
 
-	if ex.CurrentCompound.UCI == c.UCI {
-		logger.Debug("UCI matches current compound: ", ex.CurrentCompound.UCI)
-		ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, CompoundSource{
-			ID:   sci,
-			Name: n,
-		})
+	if ex.PreviousCompound.UCI == ex.CurrentCompound.UCI {
+		logger.Debugf("Current %d UCI matches previous compound: %d", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
+		ex.PreviousCompound.Sources = append(ex.PreviousCompound.Sources, source)
 	} else {
-		logger.Debugf("New compound UCI <%s> adding previous one <%s> to index", c.UCI, ex.CurrentCompound.UCI)
-		ex.ElasticManager.AddToIndex(*ex.CurrentCompound)
+		logger.Debugf("New compound UCI <%s> adding previous one <%s> to index", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
+		ex.ElasticManager.AddToIndex(ex.PreviousCompound)
 
-		c.Sources = append(c.Sources, CompoundSource{
-			ID:   sci,
-			Name: n,
-		})
-
-		ex.CurrentCompound = &c
+		ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
+		ex.PreviousCompound = ex.CurrentCompound
 	}
 }

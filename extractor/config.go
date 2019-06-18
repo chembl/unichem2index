@@ -22,6 +22,7 @@ type Configuration struct {
 	Type         string
 	MaxBulkCalls int
 	QueryRanges  []Range
+	Query        string
 }
 
 //LoadConfig opening a yaml config file (config.yaml)
