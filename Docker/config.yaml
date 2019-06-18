@@ -3,19 +3,38 @@ oracleconn: ''
 
 # ElasticSearch host, index and type
 elastichost: ''
+
 index: Unichem
 type: Compound
 
 queryranges:
   - start: 0
-    finish: 50000000
-  - start: 50000000
-    finish: 100000000
-  - start: 100000000
-    finish: 160000000
+    finish: 10000
+# Select fields must remain the same always
+# Do not include semicolons
+query: >
+  SELECT uc.UCI,
+    uc.STANDARDINCHI,
+    uc.STANDARDINCHIKEY,
+    pa.PARENT_SMILES,
+    xref.SRC_COMPOUND_ID,
+    so.src_id,
+    so.NAME_LONG,
+    so.NAME_LABEL,
+    so.DESCRIPTION,
+    so.BASE_ID_URL
+  FROM UC_INCHI UC,
+    SS_PARENTS pa,
+    UC_SOURCE@reader1dblink so,
+    UC_XREF@reader1dblink xref
+  WHERE xref.UCI = uc.UCI
+    AND UC.UCI >= %d
+    AND UC.UCI < %d
+    AND uc.UCI = pa.UCI
+    AND xref.src_id = so.src_id
 
 # Elastic Bulk add parameters
-bulklimit: 2000 # Limit of records to add for each Bulk worker
-maxbulkcalls: 13 # Maximum number of worker at one time
+bulklimit: 1000 # Limit of records to add for each Bulk worker
+maxbulkcalls: 2 # Maximum number of worker at one time
 
-logpath: ''
+logpath: 'build/logs/'
