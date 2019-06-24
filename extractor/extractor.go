@@ -12,6 +12,7 @@ import (
 //Extractor connects to the given oracle string connection (Oraconn), fetch
 //the unichem data and adds it into the index using the ElasticManager provided
 type Extractor struct {
+	id                     int
 	ElasticManager         *ElasticManager
 	Oraconn                string
 	Query                  string
@@ -62,7 +63,7 @@ func (ex *Extractor) queryByOneWithSources() error {
 	query := fmt.Sprintf(queryTemplate, ex.QueryStart, ex.QueryLimit)
 
 	var (
-		UCI, standardInchi, standardInchiKey, smiles                        string
+		UCI, standardInchi, standardInchiKey, smiles                           string
 		srcCompoundId, srcID, srcNameLong, srcName, srcDescription, srcBaseUrl string
 	)
 
@@ -114,14 +115,13 @@ func (ex *Extractor) queryByOneWithSources() error {
 		ex.CurrentCompound = c
 		//ex.ElasticManager.AddToIndex(c)
 		ex.addToIndex(CompoundSource{
-			ID:   srcID,
-			Name: srcName,
-			LongName: srcNameLong,
-			SourceID: srcCompoundId,
+			ID:          srcID,
+			Name:        srcName,
+			LongName:    srcNameLong,
+			SourceID:    srcCompoundId,
 			Description: srcDescription,
-			BaseUrl: srcBaseUrl,
+			BaseUrl:     srcBaseUrl,
 		})
-		//time.Sleep(500 * time.Millisecond)
 	}
 
 	logger.Debugf("Sending last bulk for extractor started on %d", ex.QueryStart)

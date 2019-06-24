@@ -34,12 +34,9 @@ func logInit(d bool, logPath string) *os.File {
 	}
 
 	pe := zap.NewProductionEncoderConfig()
+	pe.EncodeTime = zapcore.ISO8601TimeEncoder
 
 	fileEncoder := zapcore.NewJSONEncoder(pe)
-
-	pe.EncodeTime = zapcore.ISO8601TimeEncoder
-	pe.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	consoleEncoder := zapcore.NewConsoleEncoder(pe)
 
 	level := zap.InfoLevel
 	if d {
@@ -48,7 +45,6 @@ func logInit(d bool, logPath string) *os.File {
 
 	core := zapcore.NewTee(
 		zapcore.NewCore(fileEncoder, zapcore.AddSync(file), level),
-		zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stdout), level),
 	)
 
 	l := zap.New(core)
@@ -78,6 +74,39 @@ func main() {
 	f := logInit(*d, config.LogPath)
 	defer f.Close()
 
+	greeting()
+
+	if len(*eh) > 0 {
+		config.ElasticHost = *eh
+	} else if len(config.ElasticHost) <= 0 {
+		m := "Please provide an ElasticSearch host"
+		logger.Panic(m)
+		panic(m)
+	}
+	m := fmt.Sprintf("Elastic host %s", config.ElasticHost)
+	logger.Info(m)
+	fmt.Println(m)
+
+	if len(*oraconn) > 0 {
+		config.OracleConn = *oraconn
+	} else if len(config.OracleConn) <= 0 {
+		m := "Please provide an Oracle Connection string"
+		logger.Panic(m)
+		panic(m)
+	}
+	m = fmt.Sprintf("Oracle connection string %s", config.OracleConn)
+	logger.Info(m)
+	fmt.Println(m)
+
+	if *v {
+		return
+	}
+
+	extractor.Init(logger, config)
+	logger.Info("End of process")
+}
+
+func greeting() {
 	logger.Info("--------------Init program--------------")
 	logger.Info(fmt.Sprintf("Version: %s Build Date: %s", version, buildDate))
 	logger.Infow(
@@ -94,25 +123,10 @@ func main() {
 		config.MaxBulkCalls,
 	)
 
-	if len(*eh) > 0 {
-		config.ElasticHost = *eh
-	} else if len(config.ElasticHost) <= 0 {
-		logger.Panic("Please provide an ElasticSearch host")
+	fmt.Println("--------------Init program--------------")
+	fmt.Printf("Version: %s Build Date: %s \n", version, buildDate)
+	fmt.Println("Query ranges:")
+	for _, r := range config.QueryRanges {
+		fmt.Printf("From %d to %d \n", r.Start, r.Finish)
 	}
-	logger.Info("Elastic host ", config.ElasticHost)
-
-	if len(*oraconn) > 0 {
-		config.OracleConn = *oraconn
-	} else if len(config.OracleConn) <= 0 {
-		logger.Panic("Please provide an Oracle Connection string")
-	}
-	logger.Info("Oracle connection string ", config.OracleConn)
-
-	if *v {
-		return
-	}
-
-	extractor.Init(logger, config)
-
-	logger.Info("End of process")
 }

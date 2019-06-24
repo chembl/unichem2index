@@ -40,7 +40,7 @@ func main(){
 
 	r := csv.NewReader(bufio.NewReader(f))
 	r.Comma = '|'
-
+	line := 0
 	for {
 		rec, err := r.Read()
 		if err == io.EOF {
@@ -52,19 +52,29 @@ func main(){
 			break
 		}
 
-		insertData(rec)
+		insertData(rec, line)
+		line ++
 	}
 
 }
 
-func insertData(rec []string){
+func insertData(rec []string, line int){
+	fmt.Printf("\r%d UCI:%s SRC_ID: %s                                       ", line, rec[0], rec[7])
 	_, err := db.Exec(
-		"INSERT INTO INCHIS (UCI, STANDARDINCHI, STANDARDINCHIKEY, SMILES) VALUES (:1, :2, :3, :4)",
+		"INSERT INTO INCHIS (UCI, STANDARDINCHI, STANDARDINCHIKEY, SMILES, SRC_COMPOUND_ID, src_id, NAME_LONG, NAME_LABEL, DESCRIPTION, BASE_ID_URL) VALUES (:1, :2, :3, :4, :5, :6, :7, :8, :9, :10)",
 		rec[0],
 		rec[1],
 		rec[2],
-		rec[3])
+		rec[3],
+		rec[4],
+		rec[5],
+		rec[6],
+		rec[7],
+		rec[8],
+		rec[9],
+		)
 	if err != nil {
-		println("Error inserting line ", err)
+		println("Error inserting line ")
+		panic(err)
 	}
 }
