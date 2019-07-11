@@ -103,7 +103,6 @@ func main() {
 	}
 
 	extractor.Init(logger, config)
-	logger.Info("End of process")
 }
 
 func greeting() {
@@ -116,7 +115,7 @@ func greeting() {
 		"ES type",
 		config.Type,
 		"Query range",
-		config.QueryRanges,
+		config.QueryMax,
 		"Bulk limit",
 		config.BulkLimit,
 		"Maximum Bulk calls",
@@ -125,8 +124,6 @@ func greeting() {
 
 	fmt.Println("--------------Init program--------------")
 	fmt.Printf("Version: %s Build Date: %s \n", version, buildDate)
-	fmt.Println("Query ranges:")
-	for _, r := range config.QueryRanges {
-		fmt.Printf("From %d to %d \n", r.Start, r.Finish)
-	}
+	fmt.Printf("From %d to %d \n", config.QueryMax.Start, config.QueryMax.Finish)
+
 }

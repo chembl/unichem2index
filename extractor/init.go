@@ -3,50 +3,98 @@ package extractor
 import (
 	"context"
 	"fmt"
+	"github.com/gosuri/uiprogress"
+	"go.uber.org/zap"
 	"os"
 	"os/signal"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
-	"github.com/gosuri/uiprogress"
-	"go.uber.org/zap"
 )
 
-var (
-	wg sync.WaitGroup
-)
-
-type extractorResponse struct {
+type extractorUpdate struct {
 	id          int
 	queryStart  int
 	lastIndexed int
 }
 
-//Init sets up exractors and loaders
+type extractorResponse struct {
+	extractor Extractor
+	isSuccess bool
+}
+
+var extractors []*Extractor
+
+//Init sets up extractors and loaders
 func Init(l *zap.SugaredLogger, conf *Configuration) {
+	var extractorwg sync.WaitGroup
 	ti := time.Now()
 	uiprogress.Start()
-	resChan := make(chan extractorResponse)
-	var extractors []*Extractor
+	exUpdate := make(chan extractorUpdate)
+	exResponse := make(chan extractorResponse)
+
+
 	var bars []*uiprogress.Bar
 
-	for i, r := range conf.QueryRanges {
-		if r.Finish <= 0 {
-			l.Panic("QueryLimit must be a number higher than 0")
+	interval := conf.Interval
+	start := conf.QueryMax.Start
+	finish := conf.QueryMax.Finish
+
+	l.Info(conf.MaxConcurrent)
+	lock := make(chan int, conf.MaxConcurrent)
+
+	iterations := ((finish - start) / interval) + 1
+	//iterations = int(math.Ceil(iterations))
+	l.Info("Iterations: ", iterations)
+
+	waitForSignal(l, ti)
+	go func() {
+		for res := range exUpdate {
+			err := bars[res.id].Set(res.lastIndexed)
+			if err != nil {
+				panic(err)
+			}
 		}
-		//maxUCIs := r.Finish - r.Start
+	}()
+
+	go func() {
+		for res := range exResponse {
+			if !res.isSuccess {
+				lock <- 0
+				l.Warnf("Sending failed extractor %d to %d", res.extractor.QueryStart, res.extractor.QueryLimit)
+				ex := Extractor{
+					id:          res.extractor.id,
+					Oraconn:     conf.OracleConn,
+					Query:       conf.Query,
+					QueryStart:  res.extractor.QueryStart,
+					QueryLimit:  res.extractor.QueryLimit,
+					Logger:      l,
+					LastIdAdded: 0,
+				}
+				extractorwg.Add(1)
+				go extract(l, conf, &ex, exUpdate, exResponse, lock, &extractorwg)
+				extractors = append(extractors, &ex)
+			}
+		}
+	}()
+
+	for i := 0; i < iterations; i++ {
+		lock <- 0
+
+		init := start + (i * interval)
+		end := init + interval
+		l.Infof("Sending extractor from %d to %d", init, end)
 		ex := Extractor{
 			id:          i,
 			Oraconn:     conf.OracleConn,
 			Query:       conf.Query,
-			QueryStart:  r.Start,
-			QueryLimit:  r.Finish,
+			QueryStart:  init,
+			QueryLimit:  end,
 			Logger:      l,
 			LastIdAdded: 0,
 		}
-		l.Infof("Sending extractor from %d to %d", r.Start, r.Finish)
-		bar := uiprogress.AddBar(r.Finish).AppendCompleted()
+
+		bar := uiprogress.AddBar(end).AppendCompleted()
 		bar.PrependFunc(func(b *uiprogress.Bar) string {
 			return fmt.Sprintf("Last %d", ex.LastIdAdded)
 		})
@@ -56,29 +104,21 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 		})
 		bars = append(bars, bar)
 
-		wg.Add(1)
-		go sendExtractor(l, conf, &ex, resChan)
+		extractorwg.Add(1)
+		go extract(l, conf, &ex, exUpdate, exResponse, lock, &extractorwg)
 		extractors = append(extractors, &ex)
-
-		time.Sleep(300 * time.Millisecond)
 	}
-	waitForSignal(l, ti, extractors)
 
-	go func() {
-		for res := range resChan {
-			err := bars[res.id].Set(res.lastIndexed)
-			if err != nil {
-				panic(err)
-			}
-		}
-	}()
-	wg.Wait()
+	extractorwg.Wait()
 	elapsedTime(l, ti)
 }
 
-func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor, resChan chan extractorResponse) {
+func extract(l *zap.SugaredLogger, cn *Configuration, ex *Extractor, exUpdate chan extractorUpdate, exResponse chan extractorResponse, lock chan int, wg *sync.WaitGroup) {
+	isSuccessful := true
 
+	defer deLock(lock, l)
 	defer wg.Done()
+
 	logger := l
 	var err error
 
@@ -98,19 +138,6 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor, resCh
 				logger.Error("Bulk response reported errors")
 			} else {
 				succeeded := r.BulkResponse.Succeeded()
-				sort.Slice(succeeded, func(i, j int) bool {
-					first, err := strconv.Atoi(succeeded[i].Id)
-					if err != nil {
-						logger.Panic("Error turning ID into int", err)
-					}
-
-					second, err := strconv.Atoi(succeeded[j].Id)
-					if err != nil {
-						logger.Panic("Error turning ID into int", err)
-					}
-
-					return first < second
-				})
 
 				lastSucceded := succeeded[len(succeeded)-1]
 				logger.Infow(
@@ -136,7 +163,7 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor, resCh
 				if ex.LastIdAdded < li {
 					ex.LastIdAdded = li
 				}
-				resChan <- extractorResponse{
+				exUpdate <- extractorUpdate{
 					id:          ex.id,
 					queryStart:  ex.QueryStart,
 					lastIndexed: ex.LastIdAdded,
@@ -153,9 +180,10 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor, resCh
 					ids = ids + "," + it.Id
 					reasons = reasons + " " + it.Error.Reason
 				}
-
-				logger.Error("IDs with error ", ids)
+				logger.Debug("IDs with error ", ids)
 				logger.Debug("Reasons: ", reasons)
+
+				isSuccessful = false
 			}
 		}
 	}()
@@ -166,7 +194,7 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor, resCh
 			fmt.Println(m)
 			logger.Error(m)
 			logger.Panic(e)
-			panic(e)
+			isSuccessful = false
 		}
 	}()
 
@@ -174,10 +202,23 @@ func sendExtractor(l *zap.SugaredLogger, cn *Configuration, ex *Extractor, resCh
 	if err != nil {
 		logger.Warnf("For worker started on %d.", ex.QueryStart)
 		logger.Panic("Extractor error ", err)
-		panic(err)
+		isSuccessful = false
 	}
-	logger.Infof("Finished worker started with UCI %d waiting for loader to finish. Last ID: %d", ex.QueryStart, ex.LastIdAdded)
+
+	logger.Info("Waiting for EM waitgroup!!!")
 	em.WaitGroup.Wait()
+	time.Sleep(200 * time.Millisecond)
+	logger.Infof("Finished worker started with UCI %d waiting for loader to finish. Last ID: %d", ex.QueryStart, ex.LastIdAdded)
+
+	exResponse <- extractorResponse{
+		extractor: *ex,
+		isSuccess: isSuccessful,
+	}
+}
+
+func deLock(lock chan int, l *zap.SugaredLogger) {
+	l.Warn("DeLocking")
+	<-lock
 }
 
 func getElasticManager(l *zap.SugaredLogger, cn *Configuration) (*ElasticManager, error) {
@@ -210,14 +251,14 @@ func getElasticManager(l *zap.SugaredLogger, cn *Configuration) (*ElasticManager
 	return &es, nil
 }
 
-func waitForSignal(l *zap.SugaredLogger, t time.Time, exs []*Extractor) {
+func waitForSignal(l *zap.SugaredLogger, t time.Time) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
-	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, os.Kill)
 	go func() {
 		<-c
 		l.Warn("Received Interrupt Signal")
-		for _, ex := range exs {
+		for _, ex := range extractors {
 			m := fmt.Sprintf("For worker started on %d Last compound UCI: %d", ex.QueryStart, ex.LastIdAdded)
 			fmt.Println(m)
 			l.Warn(m)

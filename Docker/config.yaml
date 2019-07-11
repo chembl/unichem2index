@@ -7,31 +7,42 @@ elastichost: ''
 index: Unichem
 type: Compound
 
-queryranges:
-  - start: 0
-    finish: 10000
+querymax:
+  start: 0
+  finish: 30000000
+
+# Maximum amount of active queries to the DB
+maxconcurrent: 5
+# Maximum amount of UCIs per query
+interval: 1000000
+
 # Select fields must remain the same always
 # Do not include semicolons
 query: >
-  SELECT uc.UCI,
-    uc.STANDARDINCHI,
-    uc.STANDARDINCHIKEY,
-    pa.PARENT_SMILES,
-    xref.SRC_COMPOUND_ID,
-    so.src_id,
-    so.NAME_LONG,
-    so.NAME_LABEL,
-    so.DESCRIPTION,
-    so.BASE_ID_URL
-  FROM UC_INCHI UC,
-    SS_PARENTS pa,
-    UC_SOURCE@reader1dblink so,
-    UC_XREF@reader1dblink xref
-  WHERE xref.UCI = uc.UCI
-    AND UC.UCI >= %d
-    AND UC.UCI < %d
-    AND uc.UCI = pa.UCI
-    AND xref.src_id = so.src_id
+  SELECT ucpa.UCI,
+      ucpa.STANDARDINCHI,
+      ucpa.STANDARDINCHIKEY,
+      ucpa.PARENT_SMILES,
+      xref.SRC_COMPOUND_ID,
+      so.src_id,
+      so.NAME_LONG,
+      so.NAME_LABEL,
+      so.DESCRIPTION,
+      so.BASE_ID_URL
+  FROM TEMP_XREF xref, UC_SOURCE@reader1dblink so, (
+      SELECT uc.UCI,
+          uc.STANDARDINCHI,
+          uc.STANDARDINCHIKEY,
+          pa.PARENT_SMILES
+      FROM SS_PARENTS pa, (
+          SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
+          FROM TEMP_UCI
+          WHERE UCI >= %d
+          AND UCI < %d) uc
+      WHERE pa.UCI = uc.UCI ) ucpa
+  WHERE xref.UCI = ucpa.UCI
+  AND xref.src_id = so.src_id
+  ORDER BY ucpa.UCI
 
 # Elastic Bulk add parameters
 bulklimit: 1000 # Limit of records to add for each Bulk worker

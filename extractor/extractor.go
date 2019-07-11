@@ -113,7 +113,7 @@ func (ex *Extractor) queryByOneWithSources() error {
 			CreatedAt:        time.Now(),
 		}
 		ex.CurrentCompound = c
-		//ex.ElasticManager.AddToIndex(c)
+
 		ex.addToIndex(CompoundSource{
 			ID:          srcID,
 			Name:        srcName,
@@ -122,9 +122,10 @@ func (ex *Extractor) queryByOneWithSources() error {
 			Description: srcDescription,
 			BaseUrl:     srcBaseUrl,
 		})
+
 	}
 
-	logger.Debugf("Sending last bulk for extractor started on %d", ex.QueryStart)
+	logger.Infof("Sending last bulk for extractor started on %d", ex.QueryStart)
 	ex.ElasticManager.SendCurrentBulk()
 	return nil
 }
