@@ -12,12 +12,12 @@ import (
 // CompoundSource is the source where the unichem database extracted that
 // compound
 type CompoundSource struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	LongName string `json:"long_name"`
-	SourceID string `json:"source_id"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	LongName    string `json:"long_name"`
+	CompoundID  string `json:"compound_id"`
 	Description string `json:"description"`
-	BaseUrl string `json:"base_url"`
+	BaseUrl     string `json:"base_url"`
 }
 
 // Compound is an structure describing the information to be indexed
@@ -87,7 +87,24 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
                 },
                 "smiles": {
                     "type": "keyword"
-                }
+                },
+				"sources": {
+					"type": "nested",
+					"properties": {
+						"id": {
+							"type": "keyword",
+							"copy_to": "source_id"
+						},
+						"compound_id": {
+							"type": "keyword",
+							"copy_to": "compound_id"
+						},
+						"long_name": {
+							"type": "keyword",
+							"copy_to": "source_name"
+						}
+					}
+				}
             }
         }
     }

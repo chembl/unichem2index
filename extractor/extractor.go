@@ -18,7 +18,7 @@ type Extractor struct {
 	Query                  string
 	QueryLimit, QueryStart int
 	Logger                 *zap.SugaredLogger
-	LastIdAdded            int
+	LastIDAdded            int
 	db                     *sql.DB
 	//CurrentCompound contains the current compound being added to the loader
 	PreviousCompound Compound
@@ -27,7 +27,7 @@ type Extractor struct {
 
 // Start extracting unichem data by querying Unichem's db
 // and adds them into the index using a provided ElasticManager
-func (ex *Extractor) Start() error {
+func (ex *Extractor) Start(ctx context.Context) error {
 	ex.PreviousCompound = Compound{UCI: ""}
 	ex.CurrentCompound = Compound{UCI: ""}
 
@@ -45,7 +45,7 @@ func (ex *Extractor) Start() error {
 	defer ex.db.Close()
 	logger.Info("Success connecting to Oracle DB")
 
-	err = ex.queryByOneWithSources()
+	err = ex.queryByOneWithSources(ctx)
 	if err != nil {
 		return err
 	}
@@ -53,10 +53,11 @@ func (ex *Extractor) Start() error {
 	return nil
 }
 
-func (ex *Extractor) queryByOneWithSources() error {
+func (ex *Extractor) queryByOneWithSources(ctx context.Context) error {
 	logger := ex.Logger
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	var queryTemplate = ex.Query
 
@@ -76,7 +77,7 @@ func (ex *Extractor) queryByOneWithSources() error {
 	}
 	defer rows.Close()
 
-	logger.Info("Success, got rows")
+	logger.Infof("Success, got rows from extractor %d started on %d", ex.id, ex.QueryStart)
 	var c Compound
 	for rows.Next() {
 		err := rows.Scan(
@@ -118,7 +119,7 @@ func (ex *Extractor) queryByOneWithSources() error {
 			ID:          srcID,
 			Name:        srcName,
 			LongName:    srcNameLong,
-			SourceID:    srcCompoundId,
+			CompoundID:  srcCompoundId,
 			Description: srcDescription,
 			BaseUrl:     srcBaseUrl,
 		})
@@ -142,7 +143,7 @@ func (ex *Extractor) addToIndex(source CompoundSource) {
 	}
 
 	if ex.PreviousCompound.UCI == ex.CurrentCompound.UCI {
-		logger.Debugf("Current %d UCI matches previous compound: %d", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
+		logger.Debugf("Current %s UCI matches previous compound: %s", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
 		ex.PreviousCompound.Sources = append(ex.PreviousCompound.Sources, source)
 	} else {
 		logger.Debugf("New compound UCI <%s> adding previous one <%s> to index", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)

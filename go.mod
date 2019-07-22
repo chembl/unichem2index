@@ -6,6 +6,7 @@ require (
 	github.com/briandowns/spinner v1.6.1
 	github.com/cosiner/argv v0.0.1 // indirect
 	github.com/cpuguy83/go-md2man v1.0.10 // indirect
+	github.com/fortytw2/leaktest v1.3.0 // indirect
 	github.com/go-delve/delve v1.2.0 // indirect
 	github.com/gosuri/uilive v0.0.3
 	github.com/gosuri/uiprogress v0.0.1
