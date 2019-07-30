@@ -17,7 +17,7 @@ type CompoundSource struct {
 	LongName    string `json:"long_name"`
 	CompoundID  string `json:"compound_id"`
 	Description string `json:"description"`
-	BaseUrl     string `json:"base_url"`
+	BaseURL     string `json:"base_url"`
 }
 
 // Compound is an structure describing the information to be indexed
@@ -58,11 +58,15 @@ type ElasticManager struct {
 	WaitGroup          sync.WaitGroup
 	currentBulkCalls   int
 	MaxBulkCalls       int
+	totalSentJobs      int
+	totalDoneJobs      int
 }
 
 // Init function initializes an elastic client and pings it to check the provider server is up
-func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
+func (em *ElasticManager) Init(ctx context.Context, host string, logger *zap.SugaredLogger) error {
 	em.logger = logger
+	// ctx = context.Background()
+	em.Context = ctx
 
 	var err error
 
@@ -119,21 +123,21 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 		return err
 	}
 
-	inf, code, err := em.Client.Ping(host).Do(em.Context)
+	inf, code, err := em.Client.Ping(host).Do(ctx)
 	if err != nil {
 		em.logger.Panic("Error Pinging elastic client ", err)
 		return err
 	}
-	em.logger.Infof("Succesfully pinged ElasticSearch server with code %d and version %s", code, inf.Version.Number)
+	em.logger.Debugf("Succesfully pinged ElasticSearch server with code %d and version %s", code, inf.Version.Number)
 
-	ex, err := em.Client.IndexExists(em.IndexName).Do(em.Context)
+	ex, err := em.Client.IndexExists(em.IndexName).Do(ctx)
 	if err != nil {
 		em.logger.Panic("Error fetchin index existence ", err)
 		return err
 	}
 
 	if !ex {
-		in, err := em.Client.CreateIndex(em.IndexName).BodyString(mapping).Do(em.Context)
+		in, err := em.Client.CreateIndex(em.IndexName).BodyString(mapping).Do(ctx)
 		em.logger.Infof("Creating index %s", em.IndexName)
 		if err != nil {
 			em.logger.Panic("Error creating index  ", err)
@@ -153,15 +157,19 @@ func (em *ElasticManager) Init(host string, logger *zap.SugaredLogger) error {
 	em.currentBulkService = em.Client.Bulk()
 	em.currentBulkCalls = 0
 	em.countBulkRequest = 0
+	em.totalSentJobs = 0
+	em.totalDoneJobs = 0
 
 	em.Errchan = make(chan error)
 	em.Respchan = make(chan WorkerResponse)
-
 	return nil
 }
 
 // AddToIndex fills a BulkRequest up to the limit set up on the em.Bulklimit property
 func (em *ElasticManager) AddToIndex(c Compound) {
+
+	ctx := em.Context
+
 	em.logger.Debugw(
 		"Adding to index: ",
 		"UCI",
@@ -192,8 +200,9 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 			em.currentBulkCalls = 0
 		}
 
+		em.totalSentJobs++
 		em.WaitGroup.Add(1)
-		go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, em.currentBulkService)
+		go em.sendBulkRequest(ctx, em.Errchan, em.Respchan, em.currentBulkService)
 
 		em.countBulkRequest = 1
 		em.currentBulkService = em.Client.Bulk()
@@ -207,18 +216,36 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 //SendCurrentBulk throught a worker, useful for cleaning the requests stored on the BulkService
 //regardless the BulkLimit has been reached or not
 func (em *ElasticManager) SendCurrentBulk() {
+	ctx := em.Context
 	if em.currentBulkService.NumberOfActions() > 0 {
-		em.WaitGroup.Add(1)
-		go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, em.currentBulkService)
+		em.totalSentJobs++
+
+		br, err := em.currentBulkService.Do(ctx)
+		if err != nil {
+			em.Errchan <- err
+			return
+		}
+		wr := WorkerResponse{
+			Succedded:    len(br.Succeeded()),
+			Indexed:      len(br.Indexed()),
+			Created:      len(br.Created()),
+			Updated:      len(br.Updated()),
+			Failed:       len(br.Failed()),
+			BulkResponse: br,
+		}
+
+		em.Respchan <- wr
+		em.logger.Debug("END last bulk sent")
 	} else {
 		em.logger.Warn("No actions on current bulk service, skipping last bulk")
 	}
 }
 
-func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr chan WorkerResponse, cb *elastic.BulkService) {
+func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr chan WorkerResponse, b *elastic.BulkService) {
+
 	defer em.WaitGroup.Done()
-	em.logger.Debug("INIT bulk worker: Started")
-	br, err := cb.Do(ctx)
+	em.logger.Debugf("INIT bulk worker")
+	br, err := b.Do(ctx)
 	if err != nil {
 		ce <- err
 		return
@@ -232,7 +259,7 @@ func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr
 		BulkResponse: br,
 	}
 	cr <- wr
-	em.logger.Debug("END bulk worker")
+	em.logger.Debugf("END bulk worker ")
 }
 
 //Close terminates the ElasticSearch Client and BulkProcessor

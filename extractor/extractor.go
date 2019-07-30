@@ -20,6 +20,9 @@ type Extractor struct {
 	Logger                 *zap.SugaredLogger
 	LastIDAdded            int
 	db                     *sql.DB
+	exerror                chan error
+	inFinish               chan int
+	Attemps                int
 	//CurrentCompound contains the current compound being added to the loader
 	PreviousCompound Compound
 	CurrentCompound  Compound
@@ -39,6 +42,7 @@ func (ex *Extractor) Start(ctx context.Context) error {
 
 	ex.db, err = sql.Open("goracle", ex.Oraconn)
 	if err != nil {
+		ex.exerror <- err
 		logger.Error("Go oracle open ERROR ", err)
 		return err
 	}
@@ -47,6 +51,7 @@ func (ex *Extractor) Start(ctx context.Context) error {
 
 	err = ex.queryByOneWithSources(ctx)
 	if err != nil {
+		ex.exerror <- err
 		return err
 	}
 
@@ -56,16 +61,13 @@ func (ex *Extractor) Start(ctx context.Context) error {
 func (ex *Extractor) queryByOneWithSources(ctx context.Context) error {
 	logger := ex.Logger
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	var queryTemplate = ex.Query
 
 	query := fmt.Sprintf(queryTemplate, ex.QueryStart, ex.QueryLimit)
 
 	var (
 		UCI, standardInchi, standardInchiKey, smiles                           string
-		srcCompoundId, srcID, srcNameLong, srcName, srcDescription, srcBaseUrl string
+		srcCompoundID, srcID, srcNameLong, srcName, srcDescription, srcBaseURL string
 	)
 
 	logger.Debug("Query: ", query)
@@ -79,18 +81,27 @@ func (ex *Extractor) queryByOneWithSources(ctx context.Context) error {
 
 	logger.Infof("Success, got rows from extractor %d started on %d", ex.id, ex.QueryStart)
 	var c Compound
+l:
 	for rows.Next() {
+
+		select {
+		case <-ctx.Done():
+			logger.Warnf("Interrumping extractor %d because of context done", ex.id)
+			break l
+		default:
+		}
+
 		err := rows.Scan(
 			&UCI,
 			&standardInchi,
 			&standardInchiKey,
 			&smiles,
-			&srcCompoundId,
+			&srcCompoundID,
 			&srcID,
 			&srcNameLong,
 			&srcName,
 			&srcDescription,
-			&srcBaseUrl)
+			&srcBaseURL)
 		if err != nil {
 			logger.Error("Error reading line")
 			return err
@@ -101,7 +112,7 @@ func (ex *Extractor) queryByOneWithSources(ctx context.Context) error {
 			"standarInchi", standardInchi,
 			"standarInchiKey", standardInchiKey,
 			"smiles", smiles,
-			"srcCompoundId", srcCompoundId,
+			"srcCompoundID", srcCompoundID,
 			"srcID", srcID,
 			"srcName", srcName,
 		)
@@ -119,15 +130,21 @@ func (ex *Extractor) queryByOneWithSources(ctx context.Context) error {
 			ID:          srcID,
 			Name:        srcName,
 			LongName:    srcNameLong,
-			CompoundID:  srcCompoundId,
+			CompoundID:  srcCompoundID,
 			Description: srcDescription,
-			BaseUrl:     srcBaseUrl,
+			BaseURL:     srcBaseURL,
 		})
 
 	}
 
+	if ex.PreviousCompound.UCI != "" {
+		ex.ElasticManager.AddToIndex(ex.PreviousCompound)
+	}
+
 	logger.Infof("Sending last bulk for extractor started on %d", ex.QueryStart)
 	ex.ElasticManager.SendCurrentBulk()
+
+	ex.inFinish <- 1
 	return nil
 }
 

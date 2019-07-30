@@ -13,16 +13,17 @@ import (
 )
 
 type Compound struct {
-	UCI              string           `json:"uci,omitempty"`
-	Inchi            string           `json:"inchi"`
-	StandardInchiKey string           `json:"standard_inchi_key"`
-	Smiles           string           `json:"smiles"`
+	UCI              string `json:"uci,omitempty"`
+	Inchi            string `json:"inchi"`
+	StandardInchiKey string `json:"standard_inchi_key"`
+	Smiles           string `json:"smiles"`
 }
 
 var db *sql.DB
 
-func main(){
+func main() {
 	var err error
+	limit := 1200000
 
 	db, err = sql.Open("goracle", "hr/hr@oradb:1521/xe")
 	if err != nil {
@@ -42,6 +43,9 @@ func main(){
 	r.Comma = '|'
 	line := 0
 	for {
+		if line >= limit {
+			break
+		}
 		rec, err := r.Read()
 		if err == io.EOF {
 			fmt.Println("END OF FILE")
@@ -53,12 +57,12 @@ func main(){
 		}
 
 		insertData(rec, line)
-		line ++
+		line++
 	}
 
 }
 
-func insertData(rec []string, line int){
+func insertData(rec []string, line int) {
 	fmt.Printf("\r%d UCI:%s SRC_ID: %s                                       ", line, rec[0], rec[7])
 	_, err := db.Exec(
 		"INSERT INTO INCHIS (UCI, STANDARDINCHI, STANDARDINCHIKEY, SMILES, SRC_COMPOUND_ID, src_id, NAME_LONG, NAME_LABEL, DESCRIPTION, BASE_ID_URL) VALUES (:1, :2, :3, :4, :5, :6, :7, :8, :9, :10)",
@@ -72,7 +76,7 @@ func insertData(rec []string, line int){
 		rec[7],
 		rec[8],
 		rec[9],
-		)
+	)
 	if err != nil {
 		println("Error inserting line ")
 		panic(err)

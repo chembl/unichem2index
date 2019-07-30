@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/chembl/unichem2index/extractor"
 	"go.uber.org/zap"
@@ -23,8 +22,9 @@ var (
 )
 
 func logInit(d bool, logPath string) *os.File {
-	now := time.Now()
-	fn := fmt.Sprintf("unichem2index_%s.log", now.Format("20060102_150405"))
+	// now := time.Now()
+	// fn := fmt.Sprintf("unichem2index_%s.log", now.Format("20060102_150405"))
+	fn := "unichem2index.log"
 	path := filepath.Join(logPath, fn)
 	fmt.Println("Log path ", path)
 	// Open file for writing
