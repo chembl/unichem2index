@@ -26,7 +26,7 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	defer cancel()
-	waitForSignal(ctx, l, ti)
+	waitForSignal(cancel, l, ti)
 
 	interval := conf.Interval
 	start := conf.QueryMax.Start
@@ -36,6 +36,11 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 
 	l.Infof("MaxConcurrent set: %d", conf.MaxConcurrent)
 	lock := make(chan int, conf.MaxConcurrent)
+
+	if conf.MaxAttempts <= 0 {
+		l.Panic("Maximum number of extractor attempts must be defined and greater than zero")
+	}
+	l.Info("MaxAttempts: ", conf.MaxAttempts)
 
 	iterations := ((finish - start) / interval) + 1
 	l.Info("Iterations: ", iterations)
@@ -47,12 +52,12 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 			select {
 			case res := <-exResponse:
 				if !res.isSuccess {
-					m := fmt.Sprintf("FAILED extractor %d to %d ID: %d", res.extractor.QueryStart, res.extractor.QueryLimit, res.extractor.id)
+					m := fmt.Sprintf("FAILED extractor ID: %d - %d to %d ", res.extractor.id, res.extractor.QueryStart, res.extractor.QueryLimit)
 					fmt.Println(m)
 					l.Warnf(m)
 
-					if extractorsAttempts[res.extractor.id] >= 2 {
-						m := fmt.Sprintf("Maximum amount of attemps %d reached extractor ID: %d", extractorsAttempts[res.extractor.id], res.extractor.id)
+					if extractorsAttempts[res.extractor.id] >= conf.MaxAttempts {
+						m := fmt.Sprintf("CRITICAL Extractor ID: %d Maximum amount of attemps %d reached extractor", res.extractor.id, extractorsAttempts[res.extractor.id])
 						fmt.Println(m)
 						l.Error(m)
 						cancel()
@@ -73,16 +78,16 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 					extractors = append(extractors, &ex)
 					extractorsAttempts[res.extractor.id] = extractorsAttempts[res.extractor.id] + 1
 
-					m = fmt.Sprintf("ATTEMPT %d Extractor ID:%d", extractorsAttempts[res.extractor.id], res.extractor.id)
+					m = fmt.Sprintf("ATTEMPT %d Extractor ID: %d", extractorsAttempts[res.extractor.id], res.extractor.id)
 					println(m)
 					l.Warn(m)
 				} else {
-					m := fmt.Sprintf("Extractor ID:%d - %d to %d finished", res.extractor.id, res.extractor.QueryStart, res.extractor.QueryLimit)
+					m := fmt.Sprintf("DONE Extractor ID: %d - %d to %d finished", res.extractor.id, res.extractor.QueryStart, res.extractor.QueryLimit)
 					l.Info(m)
 					fmt.Println(m)
 				}
 			case <-ctx.Done():
-				m := "Interrumping Extractor response listener because of context done"
+				m := "Canceled extractors response listener because of context done"
 				l.Warn(m)
 				println(m)
 
@@ -95,7 +100,7 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 
 		init := start + (i * interval)
 		end := init + interval
-		m := fmt.Sprintf("Created extractor ID: %d from %d to %d ", i, init, end)
+		m := fmt.Sprintf("Dispatching Extractor ID: %d from %d to %d ", i, init, end)
 		l.Infof(m)
 		println(m)
 		ex := Extractor{
@@ -121,12 +126,14 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 	}
 
 	extractorwg.Wait()
+	l.Info("Wrapping it up")
+	printStatus(l)
 	elapsedTime(l, ti)
 }
 
 func startExtraction(ctx context.Context, l *zap.SugaredLogger, cn *Configuration, ex *Extractor, exResponse chan extractionResponse, lock chan int, wg *sync.WaitGroup) {
 	lock <- 0
-	m := fmt.Sprintf("Stared extractor from %d to %d ID: %d", ex.QueryStart, ex.QueryLimit, ex.id)
+	m := fmt.Sprintf("STARTED Extractor ID: %d from %d to %d", ex.QueryStart, ex.QueryLimit, ex.id)
 	l.Infof(m)
 	println(m)
 
@@ -138,6 +145,15 @@ func startExtraction(ctx context.Context, l *zap.SugaredLogger, cn *Configuratio
 
 	logger := l
 	var err error
+
+	select {
+	case <-ctx.Done():
+		m := fmt.Sprintf("CANCELED Extractor ID:%d", ex.id)
+		logger.Warn(m)
+		cancel()
+		return
+	default:
+	}
 
 	em, err := getElasticManager(exctx, l, cn)
 	if err != nil {
@@ -159,7 +175,8 @@ d:
 	for {
 		select {
 		case <-inFinish:
-			fmt.Printf("Finishing extractor %d last extracted: %s \n", ex.id, ex.PreviousCompound.UCI)
+			m := fmt.Sprintf("Finishing database extraction %d last extracted: %s", ex.id, ex.PreviousCompound.UCI)
+			l.Info(m)
 			isExtractorDone = true
 			if ex.PreviousCompound.UCI == "" {
 				break d
@@ -168,7 +185,7 @@ d:
 				break d
 			}
 		case err := <-exerror:
-			m := fmt.Sprintf("Extractor ID:%d error", ex.id)
+			m := fmt.Sprintf("Extractor ID: %d error", ex.id)
 			logger.Error(m)
 			fmt.Println(err.Error())
 			exResponse <- extractionResponse{
@@ -314,23 +331,16 @@ func getElasticManager(ctx context.Context, l *zap.SugaredLogger, cn *Configurat
 	return &es, nil
 }
 
-func waitForSignal(ctx context.Context, l *zap.SugaredLogger, t time.Time) {
+func waitForSignal(cancel context.CancelFunc, l *zap.SugaredLogger, t time.Time) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, os.Kill)
-	go func(ctx context.Context) {
-		ctx, cancel := context.WithCancel(ctx)
+	go func(cancel context.CancelFunc) {
 		ossig := <-c
 		l.Warnf("Received OS Signal: %+v", ossig)
-		for _, ex := range extractors {
-			m := fmt.Sprintf("For worker started on %d Last compound UCI: %d", ex.QueryStart, ex.LastIDAdded)
-			println(m)
-			l.Warn(m)
-		}
-		elapsedTime(l, t)
 		cancel()
 		// os.Exit(1)
-	}(ctx)
+	}(cancel)
 }
 
 func elapsedTime(l *zap.SugaredLogger, t time.Time) {
@@ -339,4 +349,12 @@ func elapsedTime(l *zap.SugaredLogger, t time.Time) {
 	m := fmt.Sprintf("Elapsed %s", e)
 	println(m)
 	logger.Infof(m)
+}
+
+func printStatus(l *zap.SugaredLogger) {
+	for _, ex := range extractors {
+		m := fmt.Sprintf("For worker started on %d Last compound UCI: %d", ex.QueryStart, ex.LastIDAdded)
+		println(m)
+		l.Warn(m)
+	}
 }

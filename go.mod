@@ -12,6 +12,7 @@ require (
 	github.com/gosuri/uiprogress v0.0.1
 	github.com/kless/term v0.0.0-20161130133337-e551c64f56c0 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
+	github.com/kr/pretty v0.1.0 // indirect
 	github.com/mailru/easyjson v0.0.0-20190221075403-6243d8e04c3f // indirect
 	github.com/mattn/go-runewidth v0.0.4 // indirect
 	github.com/olivere/elastic v6.2.16+incompatible

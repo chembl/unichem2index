@@ -25,6 +25,7 @@ type Configuration struct {
 	Query         string
 	MaxConcurrent int
 	Interval      int
+	MaxAttempts   int
 }
 
 //LoadConfig opening a yaml config file (config.yaml)

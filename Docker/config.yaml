@@ -13,7 +13,9 @@ querymax:
 
 # Maximum amount of active queries to the DB
 maxconcurrent: 5
+maxattempts: 4
 interval: 5000000
+
 # Select fields must remain the same always
 # Do not include semicolons
 

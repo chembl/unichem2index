@@ -71,7 +71,7 @@ func (em *ElasticManager) Init(ctx context.Context, host string, logger *zap.Sug
 	var err error
 
 	mapping := `{
-    "index": {
+    "settings": {
         "refresh_interval": -1,
         "number_of_replicas": 0,
         "number_of_shards": 20
@@ -128,7 +128,7 @@ func (em *ElasticManager) Init(ctx context.Context, host string, logger *zap.Sug
 		em.logger.Panic("Error Pinging elastic client ", err)
 		return err
 	}
-	em.logger.Debugf("Succesfully pinged ElasticSearch server with code %d and version %s", code, inf.Version.Number)
+	em.logger.Infof("Succesfully pinged ElasticSearch server with code %d and version %s", code, inf.Version.Number)
 
 	ex, err := em.Client.IndexExists(em.IndexName).Do(ctx)
 	if err != nil {
@@ -149,7 +149,7 @@ func (em *ElasticManager) Init(ctx context.Context, host string, logger *zap.Sug
 			return err
 		}
 		// Giving ES time to set up the Index
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 	} else {
 		em.logger.Infof("Index %s exist, skipping its creation", em.IndexName)
 	}
