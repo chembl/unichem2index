@@ -1,6 +1,6 @@
 module github.com/chembl/unichem2index
 
-go 1.12
+go 1.14
 
 require (
 	github.com/briandowns/spinner v1.6.1
@@ -8,11 +8,13 @@ require (
 	github.com/cpuguy83/go-md2man v1.0.10 // indirect
 	github.com/fortytw2/leaktest v1.3.0 // indirect
 	github.com/go-delve/delve v1.2.0 // indirect
+	github.com/godror/godror v0.16.1
 	github.com/gosuri/uilive v0.0.3
 	github.com/gosuri/uiprogress v0.0.1
 	github.com/kless/term v0.0.0-20161130133337-e551c64f56c0 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
+	github.com/magefile/mage v1.8.0
 	github.com/mailru/easyjson v0.0.0-20190221075403-6243d8e04c3f // indirect
 	github.com/mattn/go-runewidth v0.0.4 // indirect
 	github.com/olivere/elastic v6.2.16+incompatible

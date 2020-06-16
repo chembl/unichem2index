@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	//Driver for Oracle database
-	_ "gopkg.in/goracle.v2"
+	_ "github.com/godror/godror"
 )
 
 var (

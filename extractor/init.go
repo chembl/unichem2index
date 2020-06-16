@@ -157,7 +157,7 @@ func startExtraction(ctx context.Context, l *zap.SugaredLogger, cn *Configuratio
 
 	em, err := getElasticManager(exctx, l, cn)
 	if err != nil {
-		logger.Panic("Error create elastic manager ", err)
+		logger.Panic("Error creating elastic manager ", err)
 		panic(err)
 	}
 	defer em.Close()
@@ -322,7 +322,7 @@ func getElasticManager(ctx context.Context, l *zap.SugaredLogger, cn *Configurat
 		MaxBulkCalls: cn.MaxBulkCalls,
 	}
 
-	err := es.Init(ctx, cn.ElasticHost, logger)
+	err := es.Init(ctx, cn, logger)
 	if err != nil {
 		logger.Error("Error init ElasticManager ", err)
 		return nil, err

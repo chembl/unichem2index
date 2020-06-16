@@ -40,7 +40,7 @@ func (ex *Extractor) Start(ctx context.Context) error {
 
 	logger.Infof("Fetching from:%d to %d", ex.QueryStart, ex.QueryLimit)
 
-	ex.db, err = sql.Open("goracle", ex.Oraconn)
+	ex.db, err = sql.Open("godror", ex.Oraconn)
 	if err != nil {
 		ex.exerror <- err
 		logger.Error("Go oracle open ERROR ", err)

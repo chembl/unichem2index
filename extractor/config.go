@@ -12,6 +12,11 @@ type Range struct {
 	Start, Finish int
 }
 
+//Range UCI for concurrent queries
+type ElasticAuth struct {
+	Username, Password string
+}
+
 //Configuration stores the configuration parameters required for the application
 type Configuration struct {
 	LogPath       string
@@ -26,6 +31,7 @@ type Configuration struct {
 	MaxConcurrent int
 	Interval      int
 	MaxAttempts   int
+	ElasticAuth   ElasticAuth
 }
 
 //LoadConfig opening a yaml config file (config.yaml)

@@ -63,7 +63,7 @@ type ElasticManager struct {
 }
 
 // Init function initializes an elastic client and pings it to check the provider server is up
-func (em *ElasticManager) Init(ctx context.Context, host string, logger *zap.SugaredLogger) error {
+func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger *zap.SugaredLogger) error {
 	em.logger = logger
 	// ctx = context.Background()
 	em.Context = ctx
@@ -115,15 +115,16 @@ func (em *ElasticManager) Init(ctx context.Context, host string, logger *zap.Sug
 }`
 
 	em.Client, err = elastic.NewClient(
-		elastic.SetURL(host),
+		elastic.SetURL(conf.ElasticHost),
 		elastic.SetSniff(false),
+		elastic.SetBasicAuth(conf.ElasticAuth.Username, conf.ElasticAuth.Password),
 	)
 	if err != nil {
 		em.logger.Panic("Error connecting to ElasticSearch ", err)
 		return err
 	}
 
-	inf, code, err := em.Client.Ping(host).Do(ctx)
+	inf, code, err := em.Client.Ping(conf.ElasticHost).Do(ctx)
 	if err != nil {
 		em.logger.Panic("Error Pinging elastic client ", err)
 		return err
