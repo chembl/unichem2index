@@ -1,36 +1,36 @@
 version: '2.2'
 services:
-  # elasticsearch:
-  #   image: docker.elastic.co/elasticsearch/elasticsearch:6.6.1
-  #   container_name: elasticsearch
-  #   environment:
-  #     - http.host=0.0.0.0
-  #     - transport.host=0.0.0.0    
-  #     - bootstrap.memory_lock=true
-  #     - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-  #   ulimits:
-  #     memlock:
-  #       soft: -1
-  #       hard: -1
-  #     nofile:
-  #       soft: 65536
-  #       hard: 65536
-  #   mem_limit: 2g
-  #   cap_add:
-  #     - IPC_LOCK
-  #   volumes:
-  #     - ./dockerconfig/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml        
-  #   ports:
-  #     - 9200:9200
-  # kibana:
-  #   image: docker.elastic.co/kibana/kibana:6.6.1
-  #   container_name: kibana
-  #   environment:
-  #     - SERVER_NAME=kibana
-  #     - SERVER_HOST=0.0.0.0
-  #     - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-  #   ports:
-  #     - 5601:5601
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:6.6.1
+    container_name: elasticsearch
+    environment:
+      - http.host=0.0.0.0
+      - transport.host=0.0.0.0    
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 2g
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - ./dockerconfig/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml        
+    ports:
+      - 9200:9200
+  kibana:
+    image: docker.elastic.co/kibana/kibana:6.6.1
+    container_name: kibana
+    environment:
+      - SERVER_NAME=kibana
+      - SERVER_HOST=0.0.0.0
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - 5601:5601
   unichem:
     build: Docker/.
     container_name: unichem
@@ -38,7 +38,15 @@ services:
     volumes:
       - ./build/logs/:/opt/unichem/build/logs/
       - ./build/config.yaml:/opt/unichem/config.yaml
+    entrypoint: ["tail", "-f", "/dev/null"]      
     entrypoint: ["./unichem2index", "-config=/opt/unichem/config.yaml", "-v"]
+  unichem-dev:
+    build: Docker/.
+    container_name: unichem
+    image: chembl/unichem2index
+    volumes:
+      - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem/
+    entrypoint: ["tail", "-f", "/dev/null"]        
   # oradbxe:
   #   image: wnameless/oracle-xe-11g
   #   container_name: oradb

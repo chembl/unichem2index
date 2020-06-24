@@ -11,6 +11,9 @@ querymax:
   start: 0
   finish: 60000000
 
+elasticauth:
+  username: user
+  password: pass
 # Maximum amount of active queries to the DB
 maxconcurrent: 5
 maxattempts: 4

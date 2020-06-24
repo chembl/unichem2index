@@ -4,3 +4,4 @@ Docker/oracle-instantclient*
 /config.yaml
 .idea/
 test_files/
+Docker/unichem2index*

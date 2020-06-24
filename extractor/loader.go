@@ -71,27 +71,34 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 	var err error
 
 	mapping := `{
-    "settings": {
-        "refresh_interval": -1,
-        "number_of_replicas": 0,
-        "number_of_shards": 20
-    },
-    "mappings": {
-        "compound": {
-            "properties": {
-                "uci": {
-                    "type": "keyword",
-                    "copy_to": "known_ids"
-                },
-                "inchi": {
-                    "type": "keyword"
-                },
-                "standard_inchi_key": {
-                    "type": "keyword"
-                },
-                "smiles": {
-                    "type": "keyword"
-                },
+		"settings": {
+			"refresh_interval": -1,
+			"number_of_replicas": 1,
+			"number_of_shards": 5
+		},
+		"mappings": {
+			"properties": {
+				"uci": {
+					"type": "keyword",
+					"copy_to": "known_ids"
+				},
+				"inchi": {
+					"type": "keyword"
+				},
+				"standard_inchi_key": {
+					"type": "keyword"
+				},
+				"smiles": {
+					"type": "keyword",
+					"fields": {
+						"similarity": {
+							"type": "similarity_fingerprint"
+						},
+						"substructure": {
+							"type": "structure_fingerprint"
+						}
+					}
+				},
 				"sources": {
 					"type": "nested",
 					"properties": {
@@ -109,10 +116,9 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 						}
 					}
 				}
-            }
-        }
-    }
-}`
+			}
+		}
+	}`
 
 	em.Client, err = elastic.NewClient(
 		elastic.SetURL(conf.ElasticHost),
@@ -209,7 +215,7 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 		em.currentBulkService = em.Client.Bulk()
 	}
 
-	t := elastic.NewBulkIndexRequest().Index(em.IndexName).Type(em.TypeName).Id(c.UCI).Doc(tmp)
+	t := elastic.NewBulkIndexRequest().Index(em.IndexName).Id(c.UCI).Doc(tmp)
 	em.currentBulkService = em.currentBulkService.Add(t)
 
 }
