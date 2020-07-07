@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"time"
 
 	"go.uber.org/zap"
@@ -116,10 +117,30 @@ l:
 			"srcID", srcID,
 			"srcName", srcName,
 		)
+		splittedInchi, err := ex.splitInchi(standardInchi)
+		if err != nil {
+			return err
+		}
+
+		i := Inchi {
+			Version: splittedInchi["version"],
+			Formula: splittedInchi["formula"],
+			ConnectionsReg: splittedInchi["connections"],
+			HAtomsReg: splittedInchi["hAtoms"],
+			ChargeReg: splittedInchi["charge"],
+			ProtonsReg: splittedInchi["protons"],
+			StereoDbondReg: splittedInchi["stereoDbond"],
+			StereoSP3Reg: splittedInchi["stereoSP3"],
+			StereoSP3invertedReg: splittedInchi["stereoSP3inverted"],
+			StereoTypeReg: splittedInchi["stereoType"],
+			IsotopicAtoms: splittedInchi["isotopicAtoms"],
+			IsotopicExchangeableH: splittedInchi["isotopicExchangeableH"],
+			Inchi: standardInchi,
+		}
 
 		c = Compound{
 			UCI:              UCI,
-			Inchi:            standardInchi,
+			Inchi:            i,
 			StandardInchiKey: standardInchiKey,
 			Smiles:           smiles,
 			CreatedAt:        time.Now(),
@@ -169,4 +190,37 @@ func (ex *Extractor) addToIndex(source CompoundSource) {
 		ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
 		ex.PreviousCompound = ex.CurrentCompound
 	}
+}
+
+func (ex *Extractor) splitInchi(inchi string) (map[string]string, error) {
+	logger := ex.Logger
+	splitted := make(map[string]string)
+
+	connectionsReg := `(?:/c(?P<connections>[^/]*))?`
+	hAtomsReg := `(?:/h(?P<hAtoms>[^/]*))?`
+	chargeReg := `(?:/q(?P<charge>[^/]*))?`
+	protonsReg := `(?:/p(?P<protons>[^/]*))?`
+	stereoDbondReg := `(?:/b(?P<stereoDbond>[^/]*))?`
+	stereoSP3Reg := `(?:/t(?P<stereoSP3>[^/]*))?`
+	stereoSP3invertedReg := `(?:/m(?P<stereoSP3inverted>[^/]*))?`
+	stereoTypeReg := `(?:/s(?P<stereoType>\d))?`
+	isotopicAtoms := `(?:/i(?P<isotopicAtoms>[^/]*))?`
+	isotopicExchangeableH := `(?:/h(?P<isotopicExchangeableH>[^/]*))?`
+
+	inchiReg := `^InChI=(?P<version>[^/]*)/(?P<formula>[^/]*)` + connectionsReg + hAtomsReg + chargeReg + protonsReg + stereoDbondReg + stereoSP3Reg + stereoSP3invertedReg + stereoTypeReg + isotopicAtoms + isotopicExchangeableH
+
+	r := regexp.MustCompile(inchiReg)
+
+	res := r.FindStringSubmatch(inchi)
+	if res == nil {
+		return splitted, fmt.Errorf("bad inchi format: %s", inchi)
+	}
+
+	for i, name := range r.SubexpNames() {
+		if i != 0 {
+			splitted[name] = res[i]
+		}
+	}
+	logger.Debugf("Map")
+	return splitted, nil
 }

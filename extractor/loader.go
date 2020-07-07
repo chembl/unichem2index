@@ -9,6 +9,23 @@ import (
 	"go.uber.org/zap"
 )
 
+// Inchi splited in its components
+type Inchi struct {
+	Version               string `json:"version"`
+	Formula               string `json:"formula"`
+	ConnectionsReg        string `json:"connections"`
+	HAtomsReg             string `json:"h_atoms"`
+	ChargeReg             string `json:"charge"`
+	ProtonsReg            string `json:"protons"`
+	StereoDbondReg        string `json:"stereo_dbond"`
+	StereoSP3Reg          string `json:"stereo_SP3"`
+	StereoSP3invertedReg  string `json:"stereo_SP3_inverted"`
+	StereoTypeReg         string `json:"stereo_type"`
+	IsotopicAtoms         string `json:"isotopic_atoms"`
+	IsotopicExchangeableH string `json:"isotopic_exchangeable_h"`
+	Inchi                 string `json:"inchi"`
+}
+
 // CompoundSource is the source where the unichem database extracted that
 // compound
 type CompoundSource struct {
@@ -24,7 +41,7 @@ type CompoundSource struct {
 // extracted from Unichem database
 type Compound struct {
 	UCI              string           `json:"uci,omitempty"`
-	Inchi            string           `json:"inchi"`
+	Inchi            Inchi            `json:"inchi"`
 	StandardInchiKey string           `json:"standard_inchi_key"`
 	Smiles           string           `json:"smiles"`
 	Sources          []CompoundSource `json:"sources,omitempty"`
@@ -83,7 +100,21 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 					"copy_to": "known_ids"
 				},
 				"inchi": {
-					"type": "keyword"
+					"properties": {
+						"version": { "type": "keyword" },
+						"formula": { "type": "keyword" },
+						"connections": { "type": "keyword" },
+						"h_atoms": { "type": "keyword" },
+						"charge": { "type": "keyword" },
+						"protons": { "type": "keyword" },
+						"stereo_dbond": { "type": "keyword" },
+						"stereo_SP3": { "type": "keyword" },
+						"stereo_SP3_inverted": { "type": "keyword" },
+						"stereo_type": { "type": "keyword" },
+						"isotopic_atoms": { "type": "keyword" },
+						"isotopic_exchangeable_h": { "type": "keyword" },
+						"inchi": { "type": "keyword" }
+					}
 				},
 				"standard_inchi_key": {
 					"type": "keyword"
@@ -220,7 +251,7 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 
 }
 
-//SendCurrentBulk throught a worker, useful for cleaning the requests stored on the BulkService
+//SendCurrentBulk through a worker, useful for cleaning the requests stored on the BulkService
 //regardless the BulkLimit has been reached or not
 func (em *ElasticManager) SendCurrentBulk() {
 	ctx := em.Context

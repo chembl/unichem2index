@@ -38,7 +38,6 @@ services:
     volumes:
       - ./build/logs/:/opt/unichem/build/logs/
       - ./build/config.yaml:/opt/unichem/config.yaml
-    entrypoint: ["tail", "-f", "/dev/null"]      
     entrypoint: ["./unichem2index", "-config=/opt/unichem/config.yaml", "-v"]
   unichem-dev:
     build: Docker/.
@@ -46,7 +45,13 @@ services:
     image: chembl/unichem2index
     volumes:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem/
-    entrypoint: ["tail", "-f", "/dev/null"]        
+    entrypoint: ["tail", "-f", "/dev/null"]
+  golangBuilder:
+    image: golang:1.14
+    container_name: golang
+    volumes:
+      - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem2index
+    entrypoint: ["tail", "-f", "/dev/null"]
   # oradbxe:
   #   image: wnameless/oracle-xe-11g
   #   container_name: oradb
