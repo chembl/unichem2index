@@ -133,7 +133,7 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 
 func startExtraction(ctx context.Context, l *zap.SugaredLogger, cn *Configuration, ex *Extractor, exResponse chan extractionResponse, lock chan int, wg *sync.WaitGroup) {
 	lock <- 0
-	m := fmt.Sprintf("STARTED Extractor ID: %d from %d to %d", ex.QueryStart, ex.QueryLimit, ex.id)
+	m := fmt.Sprintf("STARTED Extractor ID: %d from %d to %d", ex.id, ex.QueryStart, ex.QueryLimit)
 	l.Infof(m)
 	println(m)
 

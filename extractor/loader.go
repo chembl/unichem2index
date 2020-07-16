@@ -29,12 +29,15 @@ type Inchi struct {
 // CompoundSource is the source where the unichem database extracted that
 // compound
 type CompoundSource struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	LongName    string `json:"long_name"`
-	CompoundID  string `json:"compound_id"`
-	Description string `json:"description"`
-	BaseURL     string `json:"base_url"`
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	LongName           string `json:"long_name"`
+	CompoundID         string `json:"compound_id"`
+	Description        string `json:"description"`
+	BaseURL            string `json:"base_url"`
+	ShortName          string `json:"short_name"`
+	BaseIDURLAvailable bool   `json:"base_id_url_available"`
+	AuxForURL          bool   `json:"aux_for_url"`
 }
 
 // Compound is an structure describing the information to be indexed
@@ -131,7 +134,6 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 					}
 				},
 				"sources": {
-					"type": "nested",
 					"properties": {
 						"id": {
 							"type": "keyword",

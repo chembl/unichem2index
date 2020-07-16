@@ -67,8 +67,9 @@ func (ex *Extractor) queryByOneWithSources(ctx context.Context) error {
 	query := fmt.Sprintf(queryTemplate, ex.QueryStart, ex.QueryLimit)
 
 	var (
-		UCI, standardInchi, standardInchiKey, smiles                           string
-		srcCompoundID, srcID, srcNameLong, srcName, srcDescription, srcBaseURL string
+		UCI, standardInchi, standardInchiKey, smiles                                         string
+		srcCompoundID, srcID, srcNameLong, srcName, srcDescription, srcBaseURL, srcShortName string
+		srcBaseIDURLAvailable, srcAuxForURL                                                  bool
 	)
 
 	logger.Debug("Query: ", query)
@@ -102,7 +103,10 @@ l:
 			&srcNameLong,
 			&srcName,
 			&srcDescription,
-			&srcBaseURL)
+			&srcBaseURL,
+			&srcShortName,
+			&srcBaseIDURLAvailable,
+			&srcAuxForURL)
 		if err != nil {
 			logger.Error("Error reading line")
 			return err
@@ -117,26 +121,33 @@ l:
 			"srcID", srcID,
 			"srcName", srcName,
 		)
-		splittedInchi, err := ex.splitInchi(standardInchi)
-		if err != nil {
-			return err
+		i := *new(Inchi)
+		if len(standardInchi) == 0 {
+			logger.Warnf("Compound (%s) without InChI key, skipping split", UCI)
+		} else {
+			splitInchi, err := ex.splitInchi(standardInchi)
+			if err != nil {
+				logger.Errorf("Split InChI error in UCI: %s", UCI)
+				return err
+			}
+
+			i = Inchi{
+				Version:               splitInchi["version"],
+				Formula:               splitInchi["formula"],
+				ConnectionsReg:        splitInchi["connections"],
+				HAtomsReg:             splitInchi["hAtoms"],
+				ChargeReg:             splitInchi["charge"],
+				ProtonsReg:            splitInchi["protons"],
+				StereoDbondReg:        splitInchi["stereoDbond"],
+				StereoSP3Reg:          splitInchi["stereoSP3"],
+				StereoSP3invertedReg:  splitInchi["stereoSP3inverted"],
+				StereoTypeReg:         splitInchi["stereoType"],
+				IsotopicAtoms:         splitInchi["isotopicAtoms"],
+				IsotopicExchangeableH: splitInchi["isotopicExchangeableH"],
+				Inchi:                 standardInchi,
+			}
 		}
 
-		i := Inchi {
-			Version: splittedInchi["version"],
-			Formula: splittedInchi["formula"],
-			ConnectionsReg: splittedInchi["connections"],
-			HAtomsReg: splittedInchi["hAtoms"],
-			ChargeReg: splittedInchi["charge"],
-			ProtonsReg: splittedInchi["protons"],
-			StereoDbondReg: splittedInchi["stereoDbond"],
-			StereoSP3Reg: splittedInchi["stereoSP3"],
-			StereoSP3invertedReg: splittedInchi["stereoSP3inverted"],
-			StereoTypeReg: splittedInchi["stereoType"],
-			IsotopicAtoms: splittedInchi["isotopicAtoms"],
-			IsotopicExchangeableH: splittedInchi["isotopicExchangeableH"],
-			Inchi: standardInchi,
-		}
 
 		c = Compound{
 			UCI:              UCI,
@@ -148,12 +159,15 @@ l:
 		ex.CurrentCompound = c
 
 		ex.addToIndex(CompoundSource{
-			ID:          srcID,
-			Name:        srcName,
-			LongName:    srcNameLong,
-			CompoundID:  srcCompoundID,
-			Description: srcDescription,
-			BaseURL:     srcBaseURL,
+			ID:                 srcID,
+			Name:               srcName,
+			LongName:           srcNameLong,
+			CompoundID:         srcCompoundID,
+			Description:        srcDescription,
+			BaseURL:            srcBaseURL,
+			ShortName:          srcShortName,
+			BaseIDURLAvailable: srcBaseIDURLAvailable,
+			AuxForURL:          srcAuxForURL,
 		})
 
 	}
@@ -221,6 +235,6 @@ func (ex *Extractor) splitInchi(inchi string) (map[string]string, error) {
 			splitted[name] = res[i]
 		}
 	}
-	logger.Debugf("Map")
+	logger.Debug("Map", splitted)
 	return splitted, nil
 }
