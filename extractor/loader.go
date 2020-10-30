@@ -94,7 +94,7 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 		"settings": {
 			"refresh_interval": -1,
 			"number_of_replicas": 1,
-			"number_of_shards": 5
+			"number_of_shards": 10
 		},
 		"mappings": {
 			"properties": {

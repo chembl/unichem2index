@@ -47,6 +47,9 @@ A Go installation its required in order to compile Unichem2index, it can be down
 make build
 ```
 
+1. Build using Docker Compose  ```docker-compose up golangBuilder```
+2. docker push chembl/unichem2index:latest
+
 ### Dockerized 
 
 To run it on Docker its required to download [oracle's instant client](https://www.oracle.com/technetwork/topics/linuxx86-64soft-092277.html) files and place them on 

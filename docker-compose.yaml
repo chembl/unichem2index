@@ -51,7 +51,9 @@ services:
     container_name: golang
     volumes:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem2index
-    entrypoint: ["tail", "-f", "/dev/null"]
+    working_dir: /opt/unichem2index/
+    # entrypoint: ["tail", "-f", "/dev/null"]
+    entrypoint: ["make", "build-docker"]
   # oradbxe:
   #   image: wnameless/oracle-xe-11g
   #   container_name: oradb
