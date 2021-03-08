@@ -12,7 +12,7 @@ type Range struct {
 	Start, Finish int
 }
 
-//Range UCI for concurrent queries
+//ElasticAuth ElasticSearch authentication
 type ElasticAuth struct {
 	Username, Password string
 }

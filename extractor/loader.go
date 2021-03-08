@@ -123,15 +123,7 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 					"type": "keyword"
 				},
 				"smiles": {
-					"type": "keyword",
-					"fields": {
-						"similarity": {
-							"type": "similarity_fingerprint"
-						},
-						"substructure": {
-							"type": "structure_fingerprint"
-						}
-					}
+					"type": "keyword"
 				},
 				"sources": {
 					"properties": {
