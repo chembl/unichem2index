@@ -48,12 +48,19 @@ services:
     entrypoint: ["tail", "-f", "/dev/null"]
   golangBuilder:
     image: golang:1.14
-    container_name: golang
+    container_name: uniIndexerDocker
     volumes:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem2index
     working_dir: /opt/unichem2index/
     # entrypoint: ["tail", "-f", "/dev/null"]
     entrypoint: ["make", "build-docker"]
+  localBuild:
+    image: golang:1.14
+    container_name: uniIndexerLocal
+    volumes:
+      - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem2index
+    working_dir: /opt/unichem2index/
+    entrypoint: ["tail", "-f", "/dev/null"]
   # oradbxe:
   #   image: wnameless/oracle-xe-11g
   #   container_name: oradb

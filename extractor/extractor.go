@@ -32,8 +32,8 @@ type Extractor struct {
 // Start extracting unichem data by querying Unichem's db
 // and adds them into the index using a provided ElasticManager
 func (ex *Extractor) Start(ctx context.Context) error {
-	ex.PreviousCompound = Compound{UCI: ""}
-	ex.CurrentCompound = Compound{UCI: ""}
+	ex.PreviousCompound = Compound{UCI: 0}
+	ex.CurrentCompound = Compound{UCI: 0}
 
 	logger := ex.Logger
 
@@ -62,19 +62,18 @@ func (ex *Extractor) Start(ctx context.Context) error {
 func (ex *Extractor) queryByOneWithSources(ctx context.Context) error {
 	logger := ex.Logger
 
-	var queryTemplate = ex.Query
-
-	query := fmt.Sprintf(queryTemplate, ex.QueryStart, ex.QueryLimit)
-
 	var (
-		UCI, standardInchi, standardInchiKey, smiles                                         string
-		srcCompoundID, srcID, srcNameLong, srcName, srcDescription, srcBaseURL, srcShortName string
-		srcBaseIDURLAvailable, srcAuxForURL                                                  bool
+		UCI, srcID, assignment                                                        int
+		standardInchi, standardInchiKey, smiles                                       string
+		srcCompoundID, srcNameLong, srcName, srcDescription, srcBaseURL, srcShortName string
+		srcBaseIDURLAvailable, srcAuxForURL                                           bool
+		lastUpdated                                                                   sql.NullTime
+		created                                                                       time.Time
 	)
 
-	logger.Debug("Query: ", query)
+	logger.Debug("Query: ", ex.Query)
 
-	rows, err := ex.db.QueryContext(ctx, query)
+	rows, err := ex.db.QueryContext(ctx, ex.Query)
 	if err != nil {
 		logger.Error("Error running query ", err)
 		return err
@@ -99,6 +98,9 @@ l:
 			&standardInchiKey,
 			&smiles,
 			&srcCompoundID,
+			&assignment,
+			&created,
+			&lastUpdated,
 			&srcID,
 			&srcNameLong,
 			&srcName,
@@ -108,26 +110,29 @@ l:
 			&srcBaseIDURLAvailable,
 			&srcAuxForURL)
 		if err != nil {
-			logger.Error("Error reading line")
+			logger.Error(err, "Error reading line")
 			return err
 		}
-		logger.Debugw(
-			"Row:",
-			"UCI", UCI,
-			"standarInchi", standardInchi,
-			"standarInchiKey", standardInchiKey,
-			"smiles", smiles,
-			"srcCompoundID", srcCompoundID,
-			"srcID", srcID,
-			"srcName", srcName,
-		)
+		//logger.Debugw(
+		//	"Row:",
+		//	"UCI", UCI,
+		//	"standarInchi", standardInchi,
+		//	"standarInchiKey", standardInchiKey,
+		//	"smiles", smiles,
+		//	"srcCompoundID", srcCompoundID,
+		//	"srcID", srcID,
+		//	"srcName", srcName,
+		//)
+		if assignment == 0 {
+			continue
+		}
 		i := *new(Inchi)
 		if len(standardInchi) == 0 {
-			logger.Warnf("Compound (%s) without InChI key, skipping split", UCI)
+			logger.Warnf("Compound (%d) without InChI key, skipping split", UCI)
 		} else {
 			splitInchi, err := ex.splitInchi(standardInchi)
 			if err != nil {
-				logger.Errorf("Split InChI error in UCI: %s", UCI)
+				logger.Errorf("Split InChI error in UCI: %d", UCI)
 				return err
 			}
 
@@ -148,7 +153,6 @@ l:
 			}
 		}
 
-
 		c = Compound{
 			UCI:              UCI,
 			Inchi:            i,
@@ -157,8 +161,11 @@ l:
 			CreatedAt:        time.Now(),
 		}
 		ex.CurrentCompound = c
-
-		ex.addToIndex(CompoundSource{
+		var l time.Time
+		if lastUpdated.Valid {
+			l = lastUpdated.Time
+		}
+		ex.addSourceToCompound(CompoundSource{
 			ID:                 srcID,
 			Name:               srcName,
 			LongName:           srcNameLong,
@@ -168,38 +175,41 @@ l:
 			ShortName:          srcShortName,
 			BaseIDURLAvailable: srcBaseIDURLAvailable,
 			AuxForURL:          srcAuxForURL,
+			CreatedAt:          created,
+			LastUpdate:         l,
 		})
 
 	}
 
-	if ex.PreviousCompound.UCI != "" {
-		ex.ElasticManager.AddToIndex(ex.PreviousCompound)
+	if ex.PreviousCompound.UCI != 0 {
+		ex.ElasticManager.AddToBulk(ex.PreviousCompound)
 	}
 
 	logger.Infof("Sending last bulk for extractor started on %d", ex.QueryStart)
 	ex.ElasticManager.SendCurrentBulk()
 
 	ex.inFinish <- 1
+	logger.Debug("1 to channel inFinish ")
 	return nil
 }
 
-func (ex *Extractor) addToIndex(source CompoundSource) {
+func (ex *Extractor) addSourceToCompound(source CompoundSource) {
 	logger := ex.Logger
 
-	logger.Debugf("Found UCI <%s> Source ID %s Name %s", ex.CurrentCompound.UCI, source.ID, source.Name)
+	logger.Debugf("Found UCI <%d> Source ID %d Name %s", ex.CurrentCompound.UCI, source.ID, source.Name)
 
-	if ex.PreviousCompound.UCI == "" {
+	if ex.PreviousCompound.UCI == 0 {
 		ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
 		ex.PreviousCompound = ex.CurrentCompound
 		return
 	}
 
 	if ex.PreviousCompound.UCI == ex.CurrentCompound.UCI {
-		logger.Debugf("Current %s UCI matches previous compound: %s", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
+		logger.Debugf("Current %d UCI matches previous compound: %d", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
 		ex.PreviousCompound.Sources = append(ex.PreviousCompound.Sources, source)
 	} else {
-		logger.Debugf("New compound UCI <%s> adding previous one <%s> to index", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
-		ex.ElasticManager.AddToIndex(ex.PreviousCompound)
+		logger.Debugf("New compound UCI <%d> adding previous one <%d> to index", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
+		ex.ElasticManager.AddToBulk(ex.PreviousCompound)
 
 		ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
 		ex.PreviousCompound = ex.CurrentCompound
@@ -207,7 +217,7 @@ func (ex *Extractor) addToIndex(source CompoundSource) {
 }
 
 func (ex *Extractor) splitInchi(inchi string) (map[string]string, error) {
-	logger := ex.Logger
+	//logger := ex.Logger
 	splitted := make(map[string]string)
 
 	connectionsReg := `(?:/c(?P<connections>[^/]*))?`
@@ -235,6 +245,6 @@ func (ex *Extractor) splitInchi(inchi string) (map[string]string, error) {
 			splitted[name] = res[i]
 		}
 	}
-	logger.Debug("Map", splitted)
+	//logger.Debug("Map", splitted)
 	return splitted, nil
 }

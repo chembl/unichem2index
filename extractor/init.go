@@ -17,36 +17,148 @@ type extractionResponse struct {
 	isSuccess bool
 }
 
-var extractors []*Extractor
-
 //Init sets up extractors and loaders
-func Init(l *zap.SugaredLogger, conf *Configuration) {
-	ti := time.Now()
+func Init(l *zap.SugaredLogger, conf *Configuration, isUpdate bool) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
-
 	defer cancel()
-	waitForSignal(cancel, l, ti)
+	waitForSignal(cancel, l)
 
-	interval := conf.Interval
-	start := conf.QueryMax.Start
-	finish := conf.QueryMax.Finish
+	if isUpdate {
+		updateFromLastUCI(ctx, l, conf)
+		updateRemovedSources(ctx, l, conf)
+		return
+	}
+	startExtraction(ctx, l, conf)
+}
 
+func updateFromLastUCI(ctx context.Context, l *zap.SugaredLogger, conf *Configuration) {
+	var queryRange = 10000000
+	m := "STARTING UPDATING PROCESS"
+	fmt.Println(m)
+	l.Info(m)
+	em, err := getElasticManager(ctx, l, conf)
+	if err != nil {
+		m := fmt.Sprint("Error creating elastic manager ", err)
+		fmt.Println(m)
+		l.Panic(m)
+		panic(err)
+	}
+
+	lastUCI, err := em.getLastIndexedUCI()
+	if err != nil {
+		l.Panic(err)
+	}
+	em.Close()
+
+	conf.QueryMax.Start = lastUCI - 1
+	conf.QueryMax.Finish = lastUCI + queryRange
+	startExtraction(ctx, l, conf)
+}
+
+func updateRemovedSources(ctx context.Context, l *zap.SugaredLogger, conf *Configuration) {
+	m := "Updating Removed Sources"
+	fmt.Println(m)
+	l.Info(m)
+	em, err := getElasticManager(ctx, l, conf)
+	if err != nil {
+		m := fmt.Sprint("Error creating elastic manager ", err)
+		fmt.Println(m)
+		l.Panic(m)
+		panic(err)
+	}
+
+	lastUpdatedDate, err := em.getLastUpdated()
+	if err != nil {
+		m := fmt.Sprint("Error getting last updated ", err)
+		fmt.Println(m)
+		l.Panic(m)
+	}
+	em.Close()
+
+
+	var queryTemplate = `SELECT
+  ucpa.UCI,
+  ucpa.STANDARDINCHI,
+  ucpa.STANDARDINCHIKEY,
+  ucpa.PARENT_SMILES,
+  xref.SRC_COMPOUND_ID,
+  xref.ASSIGNMENT,
+  xref.CREATED,
+  xref.LASTUPDATED,
+  so.src_id,
+  so.NAME_LONG,
+  so.NAME_LABEL,
+  so.DESCRIPTION,
+  so.BASE_ID_URL,
+  so.NAME,
+  so.BASE_ID_URL_AVAILABLE,
+  so.AUX_FOR_URL
+FROM
+(
+    SELECT *
+    FROM UC_XREF
+    WHERE LASTUPDATED IS NOT NULL
+    AND LASTUPDATED >= %s
+) xreflu,
+UC_XREF xref,
+UC_SOURCE so,
+(
+  SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY, PARENT_SMILES
+  FROM UC_STRUCTURE
+) ucpa
+WHERE xref.UCI = ucpa.UCI
+AND xref.UCI = xreflu.UCI
+AND xref.src_id = so.src_id
+ORDER BY ucpa.UCI`
+	sd := lastUpdatedDate.AddDate(0,0,-15)
+	fd := fmt.Sprintf(`TO_DATE('%s', 'YYYYMMDD')`, sd.Format("20060102"))
+	query := fmt.Sprintf(queryTemplate, fd)
+	l.Info(query)
+
+	extractOne(ctx, l, conf, query)
+}
+
+func extractOne(ctx context.Context, l *zap.SugaredLogger, conf *Configuration, query string) {
+	var extractors []*Extractor
+
+	l.Info("Starting One extractor")
+	ti := time.Now()
+	var extractorwg sync.WaitGroup
+	exResponse := make(chan extractionResponse)
 	extractorsAttempts := map[int]int{}
 
 	l.Infof("MaxConcurrent set: %d", conf.MaxConcurrent)
 	lock := make(chan int, conf.MaxConcurrent)
+	monitorExtraction(ctx, l, conf, lock, &extractorwg, exResponse, &extractorsAttempts, &extractors)
 
 	if conf.MaxAttempts <= 0 {
 		l.Panic("Maximum number of extractor attempts must be defined and greater than zero")
+		return
 	}
 	l.Info("MaxAttempts: ", conf.MaxAttempts)
 
-	iterations := ((finish - start) / interval) + 1
-	l.Info("Iterations: ", iterations)
+	ex := Extractor{
+		id:          1,
+		Oraconn:     conf.OracleConn,
+		Query:       query,
+		Logger:      l,
+		LastIDAdded: 0,
+	}
 
-	var extractorwg sync.WaitGroup
-	exResponse := make(chan extractionResponse)
+	extractorsAttempts[1] = 1
+
+	extractorwg.Add(1)
+	launchExtractor(ctx, l, conf, &ex, exResponse, lock, &extractorwg)
+
+	extractorwg.Wait()
+	l.Info("Wrapping it up")
+	elapsedTime(l, ti)
+}
+
+func monitorExtraction(ctx context.Context, l *zap.SugaredLogger, conf *Configuration, lock chan int, extractorwg *sync.WaitGroup, exResponse chan extractionResponse, exAt *map[int]int, extractors *[]*Extractor) {
+	ctx, cancel := context.WithCancel(ctx)
+	extractorsAttempts := *exAt
 	go func() {
 		for {
 			select {
@@ -64,18 +176,19 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 						break
 					}
 
+					query := fmt.Sprintf(conf.Query, res.extractor.QueryStart, res.extractor.QueryLimit)
 					ex := Extractor{
 						id:          res.extractor.id,
 						Oraconn:     conf.OracleConn,
-						Query:       conf.Query,
+						Query:       query,
 						QueryStart:  res.extractor.QueryStart,
 						QueryLimit:  res.extractor.QueryLimit,
 						Logger:      l,
 						LastIDAdded: 0,
 					}
 					extractorwg.Add(1)
-					go startExtraction(ctx, l, conf, &ex, exResponse, lock, &extractorwg)
-					extractors = append(extractors, &ex)
+					go launchExtractor(ctx, l, conf, &ex, exResponse, lock, extractorwg)
+					*extractors = append(*extractors, &ex)
 					extractorsAttempts[res.extractor.id] = extractorsAttempts[res.extractor.id] + 1
 
 					m = fmt.Sprintf("ATTEMPT %d Extractor ID: %d", extractorsAttempts[res.extractor.id], res.extractor.id)
@@ -95,6 +208,30 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 			}
 		}
 	}()
+}
+
+func startExtraction(ctx context.Context, l *zap.SugaredLogger, conf *Configuration) {
+	ti := time.Now()
+	var extractors []*Extractor
+
+	interval := conf.Interval
+	start := conf.QueryMax.Start
+	finish := conf.QueryMax.Finish
+	var extractorwg sync.WaitGroup
+	exResponse := make(chan extractionResponse)
+	extractorsAttempts := map[int]int{}
+
+	l.Infof("MaxConcurrent set: %d", conf.MaxConcurrent)
+	lock := make(chan int, conf.MaxConcurrent)
+	monitorExtraction(ctx, l, conf, lock, &extractorwg, exResponse, &extractorsAttempts, &extractors)
+
+	if conf.MaxAttempts <= 0 {
+		l.Panic("Maximum number of extractor attempts must be defined and greater than zero")
+	}
+	l.Info("MaxAttempts: ", conf.MaxAttempts)
+
+	iterations := ((finish - start) / interval) + 1
+	l.Info("Iterations: ", iterations)
 
 	for i := 0; i < iterations; i++ {
 
@@ -103,10 +240,11 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 		m := fmt.Sprintf("Dispatching Extractor ID: %d from %d to %d ", i, init, end)
 		l.Infof(m)
 		println(m)
+		query := fmt.Sprintf(conf.Query, init, end)
 		ex := Extractor{
 			id:          i,
 			Oraconn:     conf.OracleConn,
-			Query:       conf.Query,
+			Query:       query,
 			QueryStart:  init,
 			QueryLimit:  end,
 			Logger:      l,
@@ -116,7 +254,7 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 		extractorsAttempts[i] = 1
 
 		extractorwg.Add(1)
-		go startExtraction(ctx, l, conf, &ex, exResponse, lock, &extractorwg)
+		go launchExtractor(ctx, l, conf, &ex, exResponse, lock, &extractorwg)
 		extractors = append(extractors, &ex)
 
 		// Giving the first extractor a head start
@@ -127,11 +265,11 @@ func Init(l *zap.SugaredLogger, conf *Configuration) {
 
 	extractorwg.Wait()
 	l.Info("Wrapping it up")
-	printStatus(l)
+	printStatus(l, extractors)
 	elapsedTime(l, ti)
 }
 
-func startExtraction(ctx context.Context, l *zap.SugaredLogger, cn *Configuration, ex *Extractor, exResponse chan extractionResponse, lock chan int, wg *sync.WaitGroup) {
+func launchExtractor(ctx context.Context, l *zap.SugaredLogger, cn *Configuration, ex *Extractor, exResponse chan extractionResponse, lock chan int, wg *sync.WaitGroup) {
 	lock <- 0
 	m := fmt.Sprintf("STARTED Extractor ID: %d from %d to %d", ex.id, ex.QueryStart, ex.QueryLimit)
 	l.Infof(m)
@@ -139,8 +277,8 @@ func startExtraction(ctx context.Context, l *zap.SugaredLogger, cn *Configuratio
 
 	defer deLock(lock, l, ex.QueryStart, ex.id)
 	defer wg.Done()
-	exctx := context.Background()
-	exctx, cancel := context.WithCancel(exctx)
+
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	logger := l
@@ -155,7 +293,7 @@ func startExtraction(ctx context.Context, l *zap.SugaredLogger, cn *Configuratio
 	default:
 	}
 
-	em, err := getElasticManager(exctx, l, cn)
+	em, err := getElasticManager(ctx, l, cn)
 	if err != nil {
 		logger.Panic("Error creating elastic manager ", err)
 		panic(err)
@@ -175,10 +313,10 @@ d:
 	for {
 		select {
 		case <-inFinish:
-			m := fmt.Sprintf("Finishing database extraction %d last extracted: %s", ex.id, ex.PreviousCompound.UCI)
+			m := fmt.Sprintf("Finishing database extraction %d last extracted: %d", ex.id, ex.PreviousCompound.UCI)
 			l.Info(m)
 			isExtractorDone = true
-			if ex.PreviousCompound.UCI == "" {
+			if ex.PreviousCompound.UCI == 0 {
 				break d
 			}
 			if isExtractorDone && em.totalDoneJobs >= em.totalSentJobs {
@@ -331,7 +469,7 @@ func getElasticManager(ctx context.Context, l *zap.SugaredLogger, cn *Configurat
 	return &es, nil
 }
 
-func waitForSignal(cancel context.CancelFunc, l *zap.SugaredLogger, t time.Time) {
+func waitForSignal(cancel context.CancelFunc, l *zap.SugaredLogger) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, os.Kill)
@@ -351,7 +489,7 @@ func elapsedTime(l *zap.SugaredLogger, t time.Time) {
 	logger.Infof(m)
 }
 
-func printStatus(l *zap.SugaredLogger) {
+func printStatus(l *zap.SugaredLogger, extractors []*Extractor) {
 	for _, ex := range extractors {
 		m := fmt.Sprintf("For worker started on %d Last compound UCI: %d", ex.QueryStart, ex.LastIDAdded)
 		println(m)

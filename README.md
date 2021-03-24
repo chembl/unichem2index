@@ -47,8 +47,8 @@ A Go installation its required in order to compile Unichem2index, it can be down
 make build
 ```
 
-1. Build using Docker Compose  ```docker-compose up golangBuilder```
-2. Build using Docker Compose  ```docker-compose build unichem```
+1. Build the binary using  ```docker-compose up golangBuilder```
+2. Build the docker image using ```docker-compose build unichem```
 3. docker push chembl/unichem2index:latest
 
 ### Dockerized 
