@@ -344,8 +344,9 @@ func (em *ElasticManager) getLastUpdated() (time.Time, error) {
 	l.Info("Retrieving the last updated UCI")
 
 	termQuery := elastic.NewMatchAllQuery()
-	agg := elastic.NewMaxAggregation().Field("sources.last_updated")
-	searchResults, err := em.Client.Search().Index(em.IndexName).Query(termQuery).Aggregation("max_date", agg).Do(ctx)
+	aggLstUp := elastic.NewMaxAggregation().Field("sources.last_updated")
+	aggCtAt := elastic.NewMaxAggregation().Field("sources.created_at")
+	searchResults, err := em.Client.Search().Index(em.IndexName).Query(termQuery).Aggregation("max_last_updated", aggLstUp).Aggregation("max_created", aggCtAt).Do(ctx)
 	if err != nil {
 		m := fmt.Sprint("Error getting getting last updated UCI", err)
 		fmt.Println(m)
@@ -354,23 +355,39 @@ func (em *ElasticManager) getLastUpdated() (time.Time, error) {
 		return time.Now(), err
 	}
 
-	max, found := searchResults.Aggregations.MaxBucket("max_date")
+	maxLastUpdated, found := searchResults.Aggregations.MaxBucket("max_last_updated")
 	if !found {
-		m := fmt.Sprint("max_date aggregation not found", err)
+		m := fmt.Sprint("max_last_updated aggregation not found", err)
 		fmt.Println(m)
 		l.Fatal(m)
 
 		return time.Now(), err
 	}
-	l.Debug("MAX DATE", max.ValueAsString)
-	tm := int64(*max.Value) / 1000
+	l.Debug("Max last updated", maxLastUpdated.ValueAsString)
+	tm := int64(*maxLastUpdated.Value) / 1000
 	mu := time.Unix(tm, 0)
 
-	m := fmt.Sprint("Last updated date: ", mu)
+	maxCreated, found := searchResults.Aggregations.MaxBucket("max_created")
+	if !found {
+		m := fmt.Sprint("max_created aggregation not found", err)
+		fmt.Println(m)
+		l.Fatal(m)
+
+		return time.Now(), err
+	}
+	l.Debug("Max Created", maxCreated.ValueAsString)
+	tm = int64(*maxCreated.Value) / 1000
+	mc := time.Unix(tm, 0)
+	oldest := mu
+	if mc.Before(mu) {
+		oldest = mc
+	}
+
+	m := fmt.Sprint("Oldest date: ", oldest)
 	fmt.Println(m)
 	l.Info(m)
 
-	return mu, err
+	return oldest, err
 }
 
 //Close terminates the ElasticSearch Client and BulkProcessor
