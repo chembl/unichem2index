@@ -123,9 +123,7 @@ l:
 		//	"srcID", srcID,
 		//	"srcName", srcName,
 		//)
-		if assignment == 0 {
-			continue
-		}
+
 		i := *new(Inchi)
 		if len(standardInchi) == 0 {
 			logger.Warnf("Compound (%d) without InChI key, skipping split", UCI)
@@ -159,8 +157,10 @@ l:
 			StandardInchiKey: standardInchiKey,
 			Smiles:           smiles,
 			CreatedAt:        time.Now(),
+			IsSourceless:     false,
 		}
 		ex.CurrentCompound = c
+
 		var l time.Time
 		if lastUpdated.Valid {
 			l = lastUpdated.Time
@@ -177,7 +177,7 @@ l:
 			AuxForURL:          srcAuxForURL,
 			CreatedAt:          created,
 			LastUpdate:         l,
-		})
+		}, assignment)
 
 	}
 
@@ -193,26 +193,35 @@ l:
 	return nil
 }
 
-func (ex *Extractor) addSourceToCompound(source CompoundSource) {
+func (ex *Extractor) addSourceToCompound(source CompoundSource, assignment int) {
 	logger := ex.Logger
 
 	logger.Debugf("Found UCI <%d> Source ID %d Name %s", ex.CurrentCompound.UCI, source.ID, source.Name)
 
 	if ex.PreviousCompound.UCI == 0 {
-		ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
+		if assignment == 1 {
+			ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
+		}
 		ex.PreviousCompound = ex.CurrentCompound
 		return
 	}
 
-	if ex.PreviousCompound.UCI == ex.CurrentCompound.UCI {
-		logger.Debugf("Current %d UCI matches previous compound: %d", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
-		ex.PreviousCompound.Sources = append(ex.PreviousCompound.Sources, source)
-	} else {
+	if ex.PreviousCompound.UCI != ex.CurrentCompound.UCI {
 		logger.Debugf("New compound UCI <%d> adding previous one <%d> to index", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
+		if len(ex.PreviousCompound.Sources) <= 0 {
+			logger.Debug("Compound with empty sources", ex.PreviousCompound.Sources)
+			ex.PreviousCompound.IsSourceless = true
+		}
 		ex.ElasticManager.AddToBulk(ex.PreviousCompound)
 
-		ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
+		if assignment == 1 {
+			ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
+		}
 		ex.PreviousCompound = ex.CurrentCompound
+	} else {
+		if assignment == 1 {
+			ex.PreviousCompound.Sources = append(ex.PreviousCompound.Sources, source)
+		}
 	}
 }
 

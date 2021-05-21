@@ -55,6 +55,7 @@ type Compound struct {
 	Smiles           string           `json:"smiles"`
 	Sources          []CompoundSource `json:"sources,omitempty"`
 	CreatedAt        time.Time        `json:"created_at"`
+	IsSourceless     bool             `json:"is_sourceless"`
 }
 
 // WorkerResponse contains the result of the BulkRequest to the ElasticSearch index
@@ -209,7 +210,7 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 	return nil
 }
 
-// AddToIndex fills a BulkRequest up to the limit set up on the em.Bulklimit property
+// AddToBulk fills a BulkRequest up to the limit set up on the em.Bulklimit property
 func (em *ElasticManager) AddToBulk(c Compound) {
 
 	em.logger.Debugw(
@@ -219,7 +220,9 @@ func (em *ElasticManager) AddToBulk(c Compound) {
 		"Smiles",
 		c.Smiles,
 		"sources",
-		c.Sources)
+		c.Sources,
+		"isSouceless",
+		c.IsSourceless)
 
 	tmp := Compound{
 		UCI:              c.UCI,
@@ -228,6 +231,7 @@ func (em *ElasticManager) AddToBulk(c Compound) {
 		Sources:          c.Sources,
 		Smiles:           c.Smiles,
 		CreatedAt:        c.CreatedAt,
+		IsSourceless:     c.IsSourceless,
 	}
 
 	if em.countBulkRequest < em.Bulklimit {
@@ -304,6 +308,23 @@ func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr
 	}
 	cr <- wr
 	em.logger.Debugf("END bulk worker %d", UCI)
+}
+
+func (em *ElasticManager) getCount() (int64, error) {
+	ctx := em.Context
+	l := em.logger
+	l.Info("Retrieving the total UCI count")
+
+	countResult, err := em.Client.Count().Index(em.IndexName).Do(ctx)
+	if err != nil {
+		m := fmt.Sprint("Error getting getting last updated UCI", err)
+		fmt.Println(m)
+		l.Fatal(m)
+		return 0, err
+	}
+	l.Info("Elastic count result: ", countResult)
+
+	return countResult, err
 }
 
 func (em *ElasticManager) getLastIndexedUCI() (int, error) {

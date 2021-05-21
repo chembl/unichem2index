@@ -87,7 +87,6 @@ func main() {
 	m := fmt.Sprintf("Elastic host %s", config.ElasticHost)
 	logger.Info(m)
 	fmt.Println(m)
-
 	if len(*oraconn) > 0 {
 		config.OracleConn = *oraconn
 	} else if len(config.OracleConn) <= 0 {

@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/signal"
@@ -22,17 +23,82 @@ func Init(l *zap.SugaredLogger, conf *Configuration, isUpdate bool) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	waitForSignal(cancel, l)
+	waitForSignal(ctx, l)
 
 	if isUpdate {
 		updateFromLastUCI(ctx, l, conf)
 		updateRemovedSources(ctx, l, conf)
-		return
+	} else {
+		startExtraction(ctx, l, conf)
 	}
-	startExtraction(ctx, l, conf)
+	match := validateLoad(ctx, l, conf)
+	m := fmt.Sprint("Db count and index count match: ", match)
+	fmt.Println(m)
+}
+
+func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration) bool {
+
+	db, err := sql.Open("godror", conf.OracleConn)
+	if err != nil {
+		m := fmt.Sprint("Go oracle open ERROR ", err)
+		fmt.Println(m)
+		l.Panic(m)
+		panic(err)
+	}
+	defer db.Close()
+
+	var query = `SELECT count(UCI) FROM UC_STRUCTURE`
+	l.Info(query)
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		m := fmt.Sprint("Error running query ", err)
+		fmt.Println(m)
+		l.Panic(m)
+		panic(err)
+	}
+	defer rows.Close()
+
+	var dbCount int
+
+	for rows.Next() {
+
+		err := rows.Scan(
+			&dbCount)
+		if err != nil {
+			m := fmt.Sprint("Error scanning ", err)
+			fmt.Println(m)
+			l.Panic(m)
+			panic(err)
+		}
+	}
+
+	em, err := getElasticManager(ctx, l, conf)
+	if err != nil {
+		m := fmt.Sprint("Error creating elastic manager ", err)
+		fmt.Println(m)
+		l.Panic(m)
+		panic(err)
+	}
+
+	countResult, err := em.getCount()
+	if err != nil {
+		m := fmt.Sprint("Error getting the total count ", err)
+		fmt.Println(m)
+		l.Panic(m)
+		panic(err)
+	}
+	m := fmt.Sprintf("UCI total numbers - Database: %d Index: %d", dbCount, countResult)
+	fmt.Println(m)
+
+	if dbCount == int(countResult) {
+		return true
+	}
+
+	return false
 }
 
 func updateFromLastUCI(ctx context.Context, l *zap.SugaredLogger, conf *Configuration) {
+	conf.MaxConcurrent = 2
 	var queryRange = 10000000
 	m := "STARTING UPDATING PROCESS"
 	fmt.Println(m)
@@ -57,6 +123,7 @@ func updateFromLastUCI(ctx context.Context, l *zap.SugaredLogger, conf *Configur
 }
 
 func updateRemovedSources(ctx context.Context, l *zap.SugaredLogger, conf *Configuration) {
+	conf.MaxConcurrent = 1
 	m := "Updating Removed Sources"
 	fmt.Println(m)
 	l.Info(m)
@@ -75,7 +142,6 @@ func updateRemovedSources(ctx context.Context, l *zap.SugaredLogger, conf *Confi
 		l.Panic(m)
 	}
 	em.Close()
-
 
 	var queryTemplate = `SELECT
   ucpa.UCI,
@@ -111,7 +177,7 @@ WHERE xref.UCI = ucpa.UCI
 AND xref.UCI = xreflu.UCI
 AND xref.src_id = so.src_id
 ORDER BY ucpa.UCI`
-	sd := lastUpdatedDate.AddDate(0,0,-15)
+	sd := lastUpdatedDate.AddDate(0, 0, -15)
 	fd := fmt.Sprintf(`TO_DATE('%s', 'YYYYMMDD')`, sd.Format("20060102"))
 	query := fmt.Sprintf(queryTemplate, fd)
 	l.Info(query)
@@ -469,8 +535,9 @@ func getElasticManager(ctx context.Context, l *zap.SugaredLogger, cn *Configurat
 	return &es, nil
 }
 
-func waitForSignal(cancel context.CancelFunc, l *zap.SugaredLogger) {
+func waitForSignal(ctx context.Context, l *zap.SugaredLogger) {
 	c := make(chan os.Signal, 1)
+	ctx, cancel := context.WithCancel(ctx)
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, os.Kill)
 	go func(cancel context.CancelFunc) {

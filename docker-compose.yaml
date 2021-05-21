@@ -5,7 +5,7 @@ services:
     container_name: elasticsearch
     environment:
       - http.host=0.0.0.0
-      - transport.host=0.0.0.0    
+      - transport.host=0.0.0.0
       - bootstrap.memory_lock=true
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ulimits:
@@ -19,7 +19,7 @@ services:
     cap_add:
       - IPC_LOCK
     volumes:
-      - ./dockerconfig/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml        
+      - ./dockerconfig/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
     ports:
       - 9200:9200
   kibana:
@@ -38,14 +38,14 @@ services:
     volumes:
       - ./build/logs/:/opt/unichem/build/logs/
       - ./build/config.yaml:/opt/unichem/config.yaml
-    entrypoint: ["./unichem2index", "-config=/opt/unichem/config.yaml", "-v"]
+    entrypoint: [ "./unichem2index", "-config=/opt/unichem/config.yaml", "-v" ]
   unichem-dev:
     build: Docker/.
     container_name: unichem
     image: chembl/unichem2index
     volumes:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem/
-    entrypoint: ["tail", "-f", "/dev/null"]
+    entrypoint: [ "tail", "-f", "/dev/null" ]
   golangBuilder:
     image: golang:1.14
     container_name: uniIndexerDocker
@@ -53,14 +53,15 @@ services:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem2index
     working_dir: /opt/unichem2index/
     # entrypoint: ["tail", "-f", "/dev/null"]
-    entrypoint: ["make", "build-docker"]
+    entrypoint: [ "make", "build-docker" ]
   localBuild:
     image: golang:1.14
     container_name: uniIndexerLocal
     volumes:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem2index
     working_dir: /opt/unichem2index/
-    entrypoint: ["tail", "-f", "/dev/null"]
+    #    entrypoint: ["tail", "-f", "/dev/null"]
+    entrypoint: [ "make", "build" ]
   # oradbxe:
   #   image: wnameless/oracle-xe-11g
   #   container_name: oradb
