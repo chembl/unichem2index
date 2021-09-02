@@ -73,7 +73,13 @@ func main() {
 	}
 
 	f := logInit(*d, config.LogPath)
-	defer f.Close()
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			m := "Error closing log file"
+			logger.Error(m)
+		}
+	}(f)
 
 	greeting()
 
@@ -87,6 +93,7 @@ func main() {
 	m := fmt.Sprintf("Elastic host %s", config.ElasticHost)
 	logger.Info(m)
 	fmt.Println(m)
+
 	if len(*oraconn) > 0 {
 		config.OracleConn = *oraconn
 	} else if len(config.OracleConn) <= 0 {

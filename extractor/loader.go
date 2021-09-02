@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	elastic "github.com/olivere/elastic/v7"
+	"github.com/olivere/elastic/v7"
 	"go.uber.org/zap"
 )
 
@@ -44,6 +44,7 @@ type CompoundSource struct {
 	AuxForURL          bool      `json:"aux_for_url"`
 	CreatedAt          time.Time `json:"created_at"`
 	LastUpdate         time.Time `json:"last_updated,omitempty"`
+	IsPrivate          bool      `json:"is_private"`
 }
 
 // Compound is an structure describing the information to be indexed
@@ -95,69 +96,13 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 	// ctx = context.Background()
 	em.Context = ctx
 
+	if len(conf.ESIndexSettings) <= 0 {
+		logger.Panic("ES Index Setting can't be empty. PLease provide a valid one on the configuration file")
+	}
+
+	mapping := conf.ESIndexSettings
+
 	var err error
-
-	mapping := `{
-		"settings": {
-			"refresh_interval": -1,
-			"number_of_replicas": 1,
-			"number_of_shards": 10
-		},
-		"mappings": {
-			"properties": {
-				"uci": {
-					"type": "integer",
-					"copy_to": "known_ids"
-				},
-				"inchi": {
-					"properties": {
-						"version": { "type": "keyword" },
-						"formula": { "type": "keyword" },
-						"connections": { "type": "keyword" },
-						"h_atoms": { "type": "keyword" },
-						"charge": { "type": "keyword" },
-						"protons": { "type": "keyword" },
-						"stereo_dbond": { "type": "keyword" },
-						"stereo_SP3": { "type": "keyword" },
-						"stereo_SP3_inverted": { "type": "keyword" },
-						"stereo_type": { "type": "keyword" },
-						"isotopic_atoms": { "type": "keyword" },
-						"isotopic_exchangeable_h": { "type": "keyword" },
-						"inchi": { "type": "keyword" }
-					}
-				},
-				"standard_inchi_key": {
-					"type": "keyword"
-				},
-				"smiles": {
-					"type": "keyword"
-				},
-				"sources": {
-					"properties": {
-						"id": {
-							"type": "integer",
-							"copy_to": "source_id"
-						},
-						"compound_id": {
-							"type": "keyword",
-							"copy_to": "compound_id"
-						},
-						"long_name": {
-							"type": "keyword",
-							"copy_to": "source_name"
-						},
-						"created_at": {
-							"type": "date"
-						},
-						"last_updated": {
-							"type": "date"
-						}
-					}
-				}
-			}
-		}
-	}`
-
 	em.Client, err = elastic.NewClient(
 		elastic.SetURL(conf.ElasticHost),
 		elastic.SetSniff(false),

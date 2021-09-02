@@ -47,7 +47,14 @@ func (ex *Extractor) Start(ctx context.Context) error {
 		logger.Error("Go oracle open ERROR ", err)
 		return err
 	}
-	defer ex.db.Close()
+	defer func(db *sql.DB) {
+		err := db.Close()
+		if err != nil {
+			m := fmt.Sprint("Go oracle Closing DB ", err)
+			fmt.Println(m)
+			logger.Error(m)
+		}
+	}(ex.db)
 	logger.Info("Success connecting to Oracle DB")
 
 	err = ex.queryByOneWithSources(ctx)
@@ -63,7 +70,7 @@ func (ex *Extractor) queryByOneWithSources(ctx context.Context) error {
 	logger := ex.Logger
 
 	var (
-		UCI, srcID, assignment                                                        int
+		UCI, srcID, assignment, srcPrivate                                            int
 		standardInchi, standardInchiKey, smiles                                       string
 		srcCompoundID, srcNameLong, srcName, srcDescription, srcBaseURL, srcShortName string
 		srcBaseIDURLAvailable, srcAuxForURL                                           bool
@@ -108,7 +115,8 @@ l:
 			&srcBaseURL,
 			&srcShortName,
 			&srcBaseIDURLAvailable,
-			&srcAuxForURL)
+			&srcAuxForURL,
+			&srcPrivate)
 		if err != nil {
 			logger.Error(err, "Error reading line")
 			return err
@@ -150,6 +158,10 @@ l:
 				Inchi:                 standardInchi,
 			}
 		}
+		isPrivate := false
+		if srcPrivate == 1 {
+			isPrivate = true
+		}
 
 		c = Compound{
 			UCI:              UCI,
@@ -165,6 +177,7 @@ l:
 		if lastUpdated.Valid {
 			l = lastUpdated.Time
 		}
+
 		ex.addSourceToCompound(CompoundSource{
 			ID:                 srcID,
 			Name:               srcName,
@@ -177,6 +190,7 @@ l:
 			AuxForURL:          srcAuxForURL,
 			CreatedAt:          created,
 			LastUpdate:         l,
+			IsPrivate:          isPrivate,
 		}, assignment)
 
 	}

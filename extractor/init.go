@@ -4,13 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"go.uber.org/zap"
 	"os"
 	"os/signal"
 	"strconv"
 	"sync"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 type extractionResponse struct {
@@ -45,7 +44,14 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 		l.Panic(m)
 		panic(err)
 	}
-	defer db.Close()
+	defer func(db *sql.DB) {
+		err := db.Close()
+		if err != nil {
+			m := fmt.Sprint("Go oracle Closing DB ", err)
+			fmt.Println(m)
+			l.Error(m)
+		}
+	}(db)
 
 	var query = `SELECT count(UCI) FROM UC_STRUCTURE`
 	l.Info(query)
@@ -99,7 +105,7 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 
 func updateFromLastUCI(ctx context.Context, l *zap.SugaredLogger, conf *Configuration) {
 	conf.MaxConcurrent = 2
-	var queryRange = 10000000
+	var queryRange = 20000000
 	m := "STARTING UPDATING PROCESS"
 	fmt.Println(m)
 	l.Info(m)
@@ -143,39 +149,35 @@ func updateRemovedSources(ctx context.Context, l *zap.SugaredLogger, conf *Confi
 	}
 	em.Close()
 
-	var queryTemplate = `SELECT
-  ucpa.UCI,
-  ucpa.STANDARDINCHI,
-  ucpa.STANDARDINCHIKEY,
-  ucpa.PARENT_SMILES,
-  xref.SRC_COMPOUND_ID,
-  xref.ASSIGNMENT,
-  xref.CREATED,
-  xref.LASTUPDATED,
-  so.src_id,
-  so.NAME_LONG,
-  so.NAME_LABEL,
-  so.DESCRIPTION,
-  so.BASE_ID_URL,
-  so.NAME,
-  so.BASE_ID_URL_AVAILABLE,
-  so.AUX_FOR_URL
-FROM
-(
-    SELECT *
+	var queryTemplate = `
+SELECT ucpa.UCI,
+       ucpa.STANDARDINCHI,
+       ucpa.STANDARDINCHIKEY,
+       ucpa.PARENT_SMILES,
+       xref.SRC_COMPOUND_ID,
+       xref.ASSIGNMENT,
+       xref.CREATED,
+       xref.LASTUPDATED,
+       so.src_id,
+       so.NAME_LONG,
+       so.NAME_LABEL,
+       so.DESCRIPTION,
+       so.BASE_ID_URL,
+       so.NAME,
+       so.BASE_ID_URL_AVAILABLE,
+       so.AUX_FOR_URL,
+       so.PRIVATE
+FROM UC_XREF xref,
+     UC_SOURCE so,
+     UC_STRUCTURE ucpa
+WHERE xref.UCI in (
+    SELECT UCI
     FROM UC_XREF
     WHERE LASTUPDATED IS NOT NULL
-    AND LASTUPDATED >= %s
-) xreflu,
-UC_XREF xref,
-UC_SOURCE so,
-(
-  SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY, PARENT_SMILES
-  FROM UC_STRUCTURE
-) ucpa
-WHERE xref.UCI = ucpa.UCI
-AND xref.UCI = xreflu.UCI
-AND xref.src_id = so.src_id
+      AND LASTUPDATED >= %s
+)
+  AND xref.UCI = ucpa.UCI
+  AND xref.src_id = so.src_id
 ORDER BY ucpa.UCI`
 	sd := lastUpdatedDate.AddDate(0, 0, -15)
 	fd := fmt.Sprintf(`TO_DATE('%s', 'YYYYMMDD')`, sd.Format("20060102"))
