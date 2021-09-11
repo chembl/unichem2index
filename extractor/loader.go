@@ -13,23 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// Inchi splited in its components
-type Inchi struct {
-	Version               string `json:"version"`
-	Formula               string `json:"formula"`
-	ConnectionsReg        string `json:"connections"`
-	HAtomsReg             string `json:"h_atoms"`
-	ChargeReg             string `json:"charge"`
-	ProtonsReg            string `json:"protons"`
-	StereoDbondReg        string `json:"stereo_dbond"`
-	StereoSP3Reg          string `json:"stereo_SP3"`
-	StereoSP3invertedReg  string `json:"stereo_SP3_inverted"`
-	StereoTypeReg         string `json:"stereo_type"`
-	IsotopicAtoms         string `json:"isotopic_atoms"`
-	IsotopicExchangeableH string `json:"isotopic_exchangeable_h"`
-	Inchi                 string `json:"inchi"`
-}
-
 // CompoundSource is the source where the unichem database extracted that
 // compound
 type CompoundSource struct {
@@ -52,6 +35,7 @@ type CompoundSource struct {
 type Compound struct {
 	UCI              int              `json:"uci"`
 	Inchi            Inchi            `json:"inchi"`
+	Components       []Inchi          `json:"components,omitempty"`
 	StandardInchiKey string           `json:"standard_inchi_key"`
 	Smiles           string           `json:"smiles"`
 	Sources          []CompoundSource `json:"sources,omitempty"`
@@ -61,8 +45,8 @@ type Compound struct {
 
 // WorkerResponse contains the result of the BulkRequest to the ElasticSearch index
 type WorkerResponse struct {
-	Succedded    int
-	Indexed      int
+	Succeeded int
+	Indexed   int
 	Created      int
 	Updated      int
 	Deleted      int
@@ -169,16 +153,6 @@ func (em *ElasticManager) AddToBulk(c Compound) {
 		"isSouceless",
 		c.IsSourceless)
 
-	tmp := Compound{
-		UCI:              c.UCI,
-		Inchi:            c.Inchi,
-		StandardInchiKey: c.StandardInchiKey,
-		Sources:          c.Sources,
-		Smiles:           c.Smiles,
-		CreatedAt:        c.CreatedAt,
-		IsSourceless:     c.IsSourceless,
-	}
-
 	if em.countBulkRequest < em.Bulklimit {
 		em.countBulkRequest++
 	} else {
@@ -202,7 +176,7 @@ func (em *ElasticManager) AddToBulk(c Compound) {
 		em.currentBulkService = em.Client.Bulk()
 	}
 
-	t := elastic.NewBulkUpdateRequest().Index(em.IndexName).DocAsUpsert(true).Id(strconv.Itoa(c.UCI)).Doc(tmp)
+	t := elastic.NewBulkUpdateRequest().Index(em.IndexName).DocAsUpsert(true).Id(strconv.Itoa(c.UCI)).Doc(c)
 	em.currentBulkService = em.currentBulkService.Add(t)
 
 }
@@ -219,7 +193,7 @@ func (em *ElasticManager) SendCurrentBulk() {
 			return
 		}
 		wr := WorkerResponse{
-			Succedded:    len(br.Succeeded()),
+			Succeeded:    len(br.Succeeded()),
 			Indexed:      len(br.Indexed()),
 			Created:      len(br.Created()),
 			Updated:      len(br.Updated()),
@@ -244,7 +218,7 @@ func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr
 		return
 	}
 	wr := WorkerResponse{
-		Succedded:    len(br.Succeeded()),
+		Succeeded:    len(br.Succeeded()),
 		Indexed:      len(br.Indexed()),
 		Created:      len(br.Created()),
 		Updated:      len(br.Updated()),

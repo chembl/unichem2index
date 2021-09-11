@@ -7,6 +7,7 @@ elastichost: ''
 index: Unichem
 type: Compound
 
+# Total range of UCIs to fetch from the database plus interval
 querymax:
   start: 0
   finish: 60000000
@@ -24,36 +25,33 @@ interval: 5000000
 
 query: >
   SELECT
-    ucpa.UCI,
-    ucpa.STANDARDINCHI,
-    ucpa.STANDARDINCHIKEY,
-    ucpa.PARENT_SMILES,
-    xref.SRC_COMPOUND_ID,
-    so.src_id,
-    so.NAME_LONG,
-    so.NAME_LABEL,
-    so.DESCRIPTION,
-    so.BASE_ID_URL
+      ucpa.UCI,
+      ucpa.STANDARDINCHI,
+      ucpa.STANDARDINCHIKEY,
+      ucpa.PARENT_SMILES,
+      xref.SRC_COMPOUND_ID,
+      xref.ASSIGNMENT,
+      xref.CREATED,
+      xref.LASTUPDATED,
+      so.src_id,
+      so.NAME_LONG,
+      so.NAME_LABEL,
+      so.DESCRIPTION,
+      so.BASE_ID_URL,
+      so.NAME,
+      so.BASE_ID_URL_AVAILABLE,
+      so.AUX_FOR_URL,
+      so.PRIVATE
   FROM
-    TEMP_XREF xref,
-    UC_SOURCE@reader1dblink so,
-    (
-      SELECT
-        uc.UCI,
-        uc.STANDARDINCHI,
-        uc.STANDARDINCHIKEY,
-        pa.PARENT_SMILES
-      FROM
-      (
-        SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY
-        FROM TEMP_UCI
-        WHERE UCI >= %d
-        AND UCI < %d
-      ) uc
-      LEFT JOIN SS_PARENTS pa ON pa.UCI = uc.UCI
-    ) ucpa
-  WHERE xref.ASSIGNMENT = 1
-  AND xref.UCI = ucpa.UCI
+  UC_XREF xref,
+  UC_SOURCE so,
+  (
+      SELECT UCI, STANDARDINCHI, STANDARDINCHIKEY, PARENT_SMILES
+      FROM UC_STRUCTURE
+      WHERE UCI >= %d
+      AND UCI < %d
+  ) ucpa
+  WHERE xref.UCI = ucpa.UCI
   AND xref.src_id = so.src_id
   ORDER BY ucpa.UCI
 

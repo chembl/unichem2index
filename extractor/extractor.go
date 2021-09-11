@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"regexp"
 	"time"
 
 	"go.uber.org/zap"
@@ -136,28 +135,9 @@ l:
 		if len(standardInchi) == 0 {
 			logger.Warnf("Compound (%d) without InChI key, skipping split", UCI)
 		} else {
-			splitInchi, err := ex.splitInchi(standardInchi)
-			if err != nil {
-				logger.Errorf("Split InChI error in UCI: %d", UCI)
-				return err
-			}
-
-			i = Inchi{
-				Version:               splitInchi["version"],
-				Formula:               splitInchi["formula"],
-				ConnectionsReg:        splitInchi["connections"],
-				HAtomsReg:             splitInchi["hAtoms"],
-				ChargeReg:             splitInchi["charge"],
-				ProtonsReg:            splitInchi["protons"],
-				StereoDbondReg:        splitInchi["stereoDbond"],
-				StereoSP3Reg:          splitInchi["stereoSP3"],
-				StereoSP3invertedReg:  splitInchi["stereoSP3inverted"],
-				StereoTypeReg:         splitInchi["stereoType"],
-				IsotopicAtoms:         splitInchi["isotopicAtoms"],
-				IsotopicExchangeableH: splitInchi["isotopicExchangeableH"],
-				Inchi:                 standardInchi,
-			}
+			i.Inchi = standardInchi
 		}
+
 		isPrivate := false
 		if srcPrivate == 1 {
 			isPrivate = true
@@ -226,7 +206,16 @@ func (ex *Extractor) addSourceToCompound(source CompoundSource, assignment int) 
 			logger.Debug("Compound with empty sources", ex.PreviousCompound.Sources)
 			ex.PreviousCompound.IsSourceless = true
 		}
-		ex.ElasticManager.AddToBulk(ex.PreviousCompound)
+
+		inDi := InchiDivider{logger}
+		c, err := inDi.ProcessInchi(ex.PreviousCompound)
+		if err != nil {
+			m := fmt.Sprintf("Split InChI error in UCI: %d", ex.PreviousCompound.UCI)
+			fmt.Println(m)
+			logger.Panic(m)
+			panic(err)
+		}
+		ex.ElasticManager.AddToBulk(c)
 
 		if assignment == 1 {
 			ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
@@ -237,37 +226,4 @@ func (ex *Extractor) addSourceToCompound(source CompoundSource, assignment int) 
 			ex.PreviousCompound.Sources = append(ex.PreviousCompound.Sources, source)
 		}
 	}
-}
-
-func (ex *Extractor) splitInchi(inchi string) (map[string]string, error) {
-	//logger := ex.Logger
-	splitted := make(map[string]string)
-
-	connectionsReg := `(?:/c(?P<connections>[^/]*))?`
-	hAtomsReg := `(?:/h(?P<hAtoms>[^/]*))?`
-	chargeReg := `(?:/q(?P<charge>[^/]*))?`
-	protonsReg := `(?:/p(?P<protons>[^/]*))?`
-	stereoDbondReg := `(?:/b(?P<stereoDbond>[^/]*))?`
-	stereoSP3Reg := `(?:/t(?P<stereoSP3>[^/]*))?`
-	stereoSP3invertedReg := `(?:/m(?P<stereoSP3inverted>[^/]*))?`
-	stereoTypeReg := `(?:/s(?P<stereoType>\d))?`
-	isotopicAtoms := `(?:/i(?P<isotopicAtoms>[^/]*))?`
-	isotopicExchangeableH := `(?:/h(?P<isotopicExchangeableH>[^/]*))?`
-
-	inchiReg := `^InChI=(?P<version>[^/]*)/(?P<formula>[^/]*)` + connectionsReg + hAtomsReg + chargeReg + protonsReg + stereoDbondReg + stereoSP3Reg + stereoSP3invertedReg + stereoTypeReg + isotopicAtoms + isotopicExchangeableH
-
-	r := regexp.MustCompile(inchiReg)
-
-	res := r.FindStringSubmatch(inchi)
-	if res == nil {
-		return splitted, fmt.Errorf("bad inchi format: %s", inchi)
-	}
-
-	for i, name := range r.SubexpNames() {
-		if i != 0 {
-			splitted[name] = res[i]
-		}
-	}
-	//logger.Debug("Map", splitted)
-	return splitted, nil
 }

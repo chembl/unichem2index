@@ -454,7 +454,7 @@ d:
 					"Took",
 					esResponse.BulkResponse.Took,
 					"succeeded",
-					esResponse.Succedded,
+					esResponse.Succeeded,
 					"indexed",
 					esResponse.Indexed,
 					"failed",
