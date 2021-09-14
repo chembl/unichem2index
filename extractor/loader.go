@@ -2,59 +2,51 @@ package extractor
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
-	"github.com/olivere/elastic"
+	"github.com/olivere/elastic/v7"
 	"go.uber.org/zap"
 )
-
-// Inchi splited in its components
-type Inchi struct {
-	Version               string `json:"version"`
-	Formula               string `json:"formula"`
-	ConnectionsReg        string `json:"connections"`
-	HAtomsReg             string `json:"h_atoms"`
-	ChargeReg             string `json:"charge"`
-	ProtonsReg            string `json:"protons"`
-	StereoDbondReg        string `json:"stereo_dbond"`
-	StereoSP3Reg          string `json:"stereo_SP3"`
-	StereoSP3invertedReg  string `json:"stereo_SP3_inverted"`
-	StereoTypeReg         string `json:"stereo_type"`
-	IsotopicAtoms         string `json:"isotopic_atoms"`
-	IsotopicExchangeableH string `json:"isotopic_exchangeable_h"`
-	Inchi                 string `json:"inchi"`
-}
 
 // CompoundSource is the source where the unichem database extracted that
 // compound
 type CompoundSource struct {
-	ID                 string `json:"id"`
-	Name               string `json:"name"`
-	LongName           string `json:"long_name"`
-	CompoundID         string `json:"compound_id"`
-	Description        string `json:"description"`
-	BaseURL            string `json:"base_url"`
-	ShortName          string `json:"short_name"`
-	BaseIDURLAvailable bool   `json:"base_id_url_available"`
-	AuxForURL          bool   `json:"aux_for_url"`
+	ID                 int       `json:"id"`
+	Name               string    `json:"name"`
+	LongName           string    `json:"long_name"`
+	CompoundID         string    `json:"compound_id"`
+	Description        string    `json:"description"`
+	BaseURL            string    `json:"base_url"`
+	ShortName          string    `json:"short_name"`
+	BaseIDURLAvailable bool      `json:"base_id_url_available"`
+	AuxForURL          bool      `json:"aux_for_url"`
+	CreatedAt          time.Time `json:"created_at"`
+	LastUpdate         time.Time `json:"last_updated,omitempty"`
+	IsPrivate          bool      `json:"is_private"`
 }
 
 // Compound is an structure describing the information to be indexed
 // extracted from Unichem database
 type Compound struct {
-	UCI              string           `json:"uci,omitempty"`
+	UCI              int              `json:"uci"`
 	Inchi            Inchi            `json:"inchi"`
+	Components       []Inchi          `json:"components,omitempty"`
 	StandardInchiKey string           `json:"standard_inchi_key"`
 	Smiles           string           `json:"smiles"`
 	Sources          []CompoundSource `json:"sources,omitempty"`
 	CreatedAt        time.Time        `json:"created_at"`
+	IsSourceless     bool             `json:"is_sourceless"`
 }
 
 // WorkerResponse contains the result of the BulkRequest to the ElasticSearch index
 type WorkerResponse struct {
-	Succedded    int
-	Indexed      int
+	Succeeded int
+	Indexed   int
 	Created      int
 	Updated      int
 	Deleted      int
@@ -88,63 +80,13 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 	// ctx = context.Background()
 	em.Context = ctx
 
+	if len(conf.ESIndexSettings) <= 0 {
+		logger.Panic("ES Index Setting can't be empty. PLease provide a valid one on the configuration file")
+	}
+
+	mapping := conf.ESIndexSettings
+
 	var err error
-
-	mapping := `{
-		"settings": {
-			"refresh_interval": -1,
-			"number_of_replicas": 1,
-			"number_of_shards": 10
-		},
-		"mappings": {
-			"properties": {
-				"uci": {
-					"type": "keyword",
-					"copy_to": "known_ids"
-				},
-				"inchi": {
-					"properties": {
-						"version": { "type": "keyword" },
-						"formula": { "type": "keyword" },
-						"connections": { "type": "keyword" },
-						"h_atoms": { "type": "keyword" },
-						"charge": { "type": "keyword" },
-						"protons": { "type": "keyword" },
-						"stereo_dbond": { "type": "keyword" },
-						"stereo_SP3": { "type": "keyword" },
-						"stereo_SP3_inverted": { "type": "keyword" },
-						"stereo_type": { "type": "keyword" },
-						"isotopic_atoms": { "type": "keyword" },
-						"isotopic_exchangeable_h": { "type": "keyword" },
-						"inchi": { "type": "keyword" }
-					}
-				},
-				"standard_inchi_key": {
-					"type": "keyword"
-				},
-				"smiles": {
-					"type": "keyword"
-				},
-				"sources": {
-					"properties": {
-						"id": {
-							"type": "keyword",
-							"copy_to": "source_id"
-						},
-						"compound_id": {
-							"type": "keyword",
-							"copy_to": "compound_id"
-						},
-						"long_name": {
-							"type": "keyword",
-							"copy_to": "source_name"
-						}
-					}
-				}
-			}
-		}
-	}`
-
 	em.Client, err = elastic.NewClient(
 		elastic.SetURL(conf.ElasticHost),
 		elastic.SetSniff(false),
@@ -197,50 +139,44 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 	return nil
 }
 
-// AddToIndex fills a BulkRequest up to the limit set up on the em.Bulklimit property
-func (em *ElasticManager) AddToIndex(c Compound) {
-
-	ctx := em.Context
+// AddToBulk fills a BulkRequest up to the limit set up on the em.Bulklimit property
+func (em *ElasticManager) AddToBulk(c Compound) {
 
 	em.logger.Debugw(
-		"Adding to index: ",
+		"Adding to bulk: ",
 		"UCI",
 		c.UCI,
 		"Smiles",
 		c.Smiles,
 		"sources",
-		c.Sources)
-
-	tmp := Compound{
-		Inchi:            c.Inchi,
-		StandardInchiKey: c.StandardInchiKey,
-		Sources:          c.Sources,
-		Smiles:           c.Smiles,
-		CreatedAt:        c.CreatedAt,
-	}
+		c.Sources,
+		"isSouceless",
+		c.IsSourceless)
 
 	if em.countBulkRequest < em.Bulklimit {
 		em.countBulkRequest++
 	} else {
-		em.logger.Debugf("Got %d sending BulkRequest. New Bulk starting from: %s", em.countBulkRequest, c.UCI)
+		em.logger.Debugf("Got %d sending BulkRequest. New Bulk starting from: %d", em.countBulkRequest, c.UCI)
 		if em.currentBulkCalls < em.MaxBulkCalls {
 			em.currentBulkCalls++
 		} else {
 			// Wait for the MaxBulkCalls threads finish before continuing
-			em.logger.Debugf("Hitting %d workers to send. Waiting for them to finish. Last UCI: %s", em.currentBulkCalls, c.UCI)
+			em.logger.Debugf("Hitting %d workers to send. Waiting for them to finish. Last UCI: %d", em.currentBulkCalls, c.UCI)
 			em.WaitGroup.Wait()
 			em.currentBulkCalls = 0
 		}
 
 		em.totalSentJobs++
+
 		em.WaitGroup.Add(1)
-		go em.sendBulkRequest(ctx, em.Errchan, em.Respchan, em.currentBulkService)
+		em.logger.Debugf("Sending bulk triggered by: %d", c.UCI)
+		go em.sendBulkRequest(em.Context, em.Errchan, em.Respchan, em.currentBulkService, c.UCI)
 
 		em.countBulkRequest = 1
 		em.currentBulkService = em.Client.Bulk()
 	}
 
-	t := elastic.NewBulkIndexRequest().Index(em.IndexName).Id(c.UCI).Doc(tmp)
+	t := elastic.NewBulkUpdateRequest().Index(em.IndexName).DocAsUpsert(true).Id(strconv.Itoa(c.UCI)).Doc(c)
 	em.currentBulkService = em.currentBulkService.Add(t)
 
 }
@@ -248,17 +184,16 @@ func (em *ElasticManager) AddToIndex(c Compound) {
 //SendCurrentBulk through a worker, useful for cleaning the requests stored on the BulkService
 //regardless the BulkLimit has been reached or not
 func (em *ElasticManager) SendCurrentBulk() {
-	ctx := em.Context
 	if em.currentBulkService.NumberOfActions() > 0 {
 		em.totalSentJobs++
 
-		br, err := em.currentBulkService.Do(ctx)
+		br, err := em.currentBulkService.Do(em.Context)
 		if err != nil {
 			em.Errchan <- err
 			return
 		}
 		wr := WorkerResponse{
-			Succedded:    len(br.Succeeded()),
+			Succeeded:    len(br.Succeeded()),
 			Indexed:      len(br.Indexed()),
 			Created:      len(br.Created()),
 			Updated:      len(br.Updated()),
@@ -273,17 +208,17 @@ func (em *ElasticManager) SendCurrentBulk() {
 	}
 }
 
-func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr chan WorkerResponse, b *elastic.BulkService) {
+func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr chan WorkerResponse, b *elastic.BulkService, UCI int) {
 
 	defer em.WaitGroup.Done()
-	em.logger.Debugf("INIT bulk worker")
+	em.logger.Debugf("INIT bulk worker %d", UCI)
 	br, err := b.Do(ctx)
 	if err != nil {
 		ce <- err
 		return
 	}
 	wr := WorkerResponse{
-		Succedded:    len(br.Succeeded()),
+		Succeeded:    len(br.Succeeded()),
 		Indexed:      len(br.Indexed()),
 		Created:      len(br.Created()),
 		Updated:      len(br.Updated()),
@@ -291,7 +226,108 @@ func (em *ElasticManager) sendBulkRequest(ctx context.Context, ce chan error, cr
 		BulkResponse: br,
 	}
 	cr <- wr
-	em.logger.Debugf("END bulk worker ")
+	em.logger.Debugf("END bulk worker %d", UCI)
+}
+
+func (em *ElasticManager) getCount() (int64, error) {
+	ctx := em.Context
+	l := em.logger
+	l.Info("Retrieving the total UCI count")
+
+	countResult, err := em.Client.Count().Index(em.IndexName).Do(ctx)
+	if err != nil {
+		m := fmt.Sprint("Error getting getting last updated UCI", err)
+		fmt.Println(m)
+		l.Fatal(m)
+		return 0, err
+	}
+	l.Info("Elastic count result: ", countResult)
+
+	return countResult, err
+}
+
+func (em *ElasticManager) getLastIndexedUCI() (int, error) {
+	ctx := em.Context
+	l := em.logger
+	l.Info("Retrieving last UCI indexed")
+	termQuery := elastic.NewMatchAllQuery()
+	searchResults, err := em.Client.Search().Index(em.IndexName).Query(termQuery).Sort("uci", false).Size(1).Do(ctx)
+	if err != nil {
+		m := fmt.Sprint("Error getting getting last UCI indexed", err)
+		fmt.Println(m)
+		l.Fatal(m)
+
+		return 0, err
+	}
+	var c Compound
+	if searchResults.Hits.TotalHits.Value > 0 {
+		for _, hit := range searchResults.Hits.Hits {
+			err := json.Unmarshal(hit.Source, &c)
+			if err != nil {
+				m := fmt.Sprint("Error deserialize", err)
+				fmt.Println(m)
+				l.Fatal(m)
+				return 0, err
+			}
+			return c.UCI, nil
+		}
+	} else {
+		return 0, errors.New("no last UCI found")
+	}
+
+	return 0, err
+}
+
+func (em *ElasticManager) getLastUpdated() (time.Time, error) {
+	ctx := em.Context
+	l := em.logger
+	l.Info("Retrieving the last updated UCI")
+
+	termQuery := elastic.NewMatchAllQuery()
+	aggLstUp := elastic.NewMaxAggregation().Field("sources.last_updated")
+	aggCtAt := elastic.NewMaxAggregation().Field("sources.created_at")
+	searchResults, err := em.Client.Search().Index(em.IndexName).Query(termQuery).Aggregation("max_last_updated", aggLstUp).Aggregation("max_created", aggCtAt).Do(ctx)
+	if err != nil {
+		m := fmt.Sprint("Error getting getting last updated UCI", err)
+		fmt.Println(m)
+		l.Fatal(m)
+
+		return time.Now(), err
+	}
+
+	maxLastUpdated, found := searchResults.Aggregations.MaxBucket("max_last_updated")
+	if !found {
+		m := fmt.Sprint("max_last_updated aggregation not found", err)
+		fmt.Println(m)
+		l.Fatal(m)
+
+		return time.Now(), err
+	}
+	l.Debug("Max last updated", maxLastUpdated.ValueAsString)
+	tm := int64(*maxLastUpdated.Value) / 1000
+	mu := time.Unix(tm, 0)
+
+	maxCreated, found := searchResults.Aggregations.MaxBucket("max_created")
+	if !found {
+		m := fmt.Sprint("max_created aggregation not found", err)
+		fmt.Println(m)
+		l.Fatal(m)
+
+		return time.Now(), err
+	}
+	l.Debug("Max Created", maxCreated.ValueAsString)
+	tm = int64(*maxCreated.Value) / 1000
+	mc := time.Unix(tm, 0)
+	oldest := mu
+	if mc.Before(mu) {
+		oldest = mc
+	}
+
+	m := fmt.Sprint("Oldest date: ", oldest)
+	fmt.Println(m)
+	l.Info(m)
+
+	return oldest, err
 }
 
 //Close terminates the ElasticSearch Client and BulkProcessor

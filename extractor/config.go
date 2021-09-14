@@ -19,19 +19,20 @@ type ElasticAuth struct {
 
 //Configuration stores the configuration parameters required for the application
 type Configuration struct {
-	LogPath       string
-	OracleConn    string
-	ElasticHost   string
-	BulkLimit     int
-	Index         string
-	Type          string
-	MaxBulkCalls  int
-	QueryMax      Range
-	Query         string
-	MaxConcurrent int
-	Interval      int
-	MaxAttempts   int
-	ElasticAuth   ElasticAuth
+	LogPath         string
+	OracleConn      string
+	ElasticHost     string
+	BulkLimit       int
+	Index           string
+	Type            string
+	MaxBulkCalls    int
+	QueryMax        Range
+	Query           string
+	MaxConcurrent   int
+	Interval        int
+	MaxAttempts     int
+	ElasticAuth     ElasticAuth
+	ESIndexSettings string
 }
 
 //LoadConfig opening a yaml config file (config.yaml)

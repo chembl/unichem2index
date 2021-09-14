@@ -1,12 +1,13 @@
 version: '2.2'
 services:
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:6.6.1
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.5.2
     container_name: elasticsearch
     environment:
       - http.host=0.0.0.0
-      - transport.host=0.0.0.0    
+      - transport.host=0.0.0.0
       - bootstrap.memory_lock=true
+      - "discovery.type=single-node"
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ulimits:
       memlock:
@@ -19,18 +20,19 @@ services:
     cap_add:
       - IPC_LOCK
     volumes:
-      - ./dockerconfig/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml        
+      - ./dockerconfig/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
     ports:
-      - 9200:9200
+      - "9200:9200"
+      - "9300:9300"
   kibana:
-    image: docker.elastic.co/kibana/kibana:6.6.1
+    image: docker.elastic.co/kibana/kibana:7.5.2
     container_name: kibana
     environment:
       - SERVER_NAME=kibana
       - SERVER_HOST=0.0.0.0
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
     ports:
-      - 5601:5601
+      - "5601:5601"
   unichem:
     build: Docker/.
     container_name: unichem
@@ -38,22 +40,30 @@ services:
     volumes:
       - ./build/logs/:/opt/unichem/build/logs/
       - ./build/config.yaml:/opt/unichem/config.yaml
-    entrypoint: ["./unichem2index", "-config=/opt/unichem/config.yaml", "-v"]
+    entrypoint: [ "./unichem2index", "-config=/opt/unichem/config.yaml", "-v" ]
   unichem-dev:
     build: Docker/.
     container_name: unichem
     image: chembl/unichem2index
     volumes:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem/
-    entrypoint: ["tail", "-f", "/dev/null"]
+    entrypoint: [ "tail", "-f", "/dev/null" ]
   golangBuilder:
-    image: golang:1.14
-    container_name: golang
+    image: golang:1.17
+    container_name: uniIndexerDocker
     volumes:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem2index
     working_dir: /opt/unichem2index/
     # entrypoint: ["tail", "-f", "/dev/null"]
-    entrypoint: ["make", "build-docker"]
+    entrypoint: [ "make", "build-docker" ]
+  localBuild:
+    image: golang:1.17
+    container_name: uniIndexerLocal
+    volumes:
+      - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem2index
+    working_dir: /opt/unichem2index/
+    #    entrypoint: ["tail", "-f", "/dev/null"]
+    entrypoint: [ "make", "build" ]
   # oradbxe:
   #   image: wnameless/oracle-xe-11g
   #   container_name: oradb

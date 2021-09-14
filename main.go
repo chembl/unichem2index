@@ -59,6 +59,7 @@ func main() {
 	cn := flag.String("config", "", "Config file path, must be YAML")
 	d := flag.Bool("d", false, "Sets up the log level to debug, keep in mind logging will have an impact on the performance")
 	v := flag.Bool("v", false, "Returns the binary version and built date info")
+	uFlag := flag.Bool("u", false, "Updates from the last UCI indexed, ignores the range given")
 	eh := flag.String("eshost", "", "ElasticSearch host, Example: http://0.0.0.0:9200")
 	oraconn := flag.String("oraconn", "", "Oracle Database connection string: Example: 'hr/hr@localhost:1521:XE'")
 	flag.Parse()
@@ -72,7 +73,13 @@ func main() {
 	}
 
 	f := logInit(*d, config.LogPath)
-	defer f.Close()
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			m := "Error closing log file"
+			logger.Error(m)
+		}
+	}(f)
 
 	greeting()
 
@@ -102,7 +109,12 @@ func main() {
 		return
 	}
 
-	extractor.Init(logger, config)
+	if *uFlag {
+		extractor.Init(logger, config, true)
+		return
+	}
+
+	extractor.Init(logger, config, false)
 }
 
 func greeting() {
