@@ -16,31 +16,36 @@ type InchiDivider struct {
 func (ind *InchiDivider) ProcessInchi(compound Compound) (Compound, error) {
 	logger := ind.Logger
 
+	if len(compound.Inchi.Inchi) < 1 {
+		var c Compound
+		return c, fmt.Errorf("empty inchi for UCI %d", compound.UCI)
+	}
+
 	i := *new(Inchi)
-	splitInchi, err := ind.splitInchi(compound.Inchi.Inchi)
+	s, err := ind.splitInchi(compound.Inchi.Inchi)
 	if err != nil {
 		logger.Errorf("Error processing Inchi")
 		return compound, err
 	}
 	i = Inchi{
-		Version:               splitInchi["version"],
-		Formula:               splitInchi["formula"],
-		Connections:           splitInchi["connections"],
-		HAtoms:                splitInchi["hAtoms"],
-		Charge:                splitInchi["charge"],
-		Protons:               splitInchi["protons"],
-		StereoDbond:           splitInchi["stereoDbond"],
-		StereoSP3:             splitInchi["stereoSP3"],
-		StereoSP3inverted:     splitInchi["stereoSP3inverted"],
-		StereoType:            splitInchi["stereoType"],
-		IsotopicAtoms:         splitInchi["isotopicAtoms"],
-		IsotopicExchangeableH: splitInchi["isotopicExchangeableH"],
+		Version:               s["version"],
+		Formula:               s["formula"],
+		Connections:           s["connections"],
+		HAtoms:                s["hAtoms"],
+		Charge:                s["charge"],
+		Protons:               s["protons"],
+		StereoDbond:           s["stereoDbond"],
+		StereoSP3:             s["stereoSP3"],
+		StereoSP3inverted:     s["stereoSP3inverted"],
+		StereoType:            s["stereoType"],
+		IsotopicAtoms:         s["isotopicAtoms"],
+		IsotopicExchangeableH: s["isotopicExchangeableH"],
 		Inchi:                 compound.Inchi.Inchi,
 	}
 	compound.Inchi = i
 	compound.Components, err = ind.extractSubCompounds(i)
 	if err != nil {
-		logger.Errorf("Error getting subcompounds")
+		logger.Errorf("Error getting subcompounds ")
 		return compound, err
 	}
 
@@ -55,6 +60,11 @@ func (ind *InchiDivider) extractSubCompounds(inchi Inchi) ([]Inchi, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if len(formula) <= 1 {
+		return nil, nil
+	}
+
 	connection, err := ind.splitStandardLayer(inchi.Connections, len(formula))
 	if err != nil {
 		return nil, err
@@ -81,9 +91,6 @@ func (ind *InchiDivider) extractSubCompounds(inchi Inchi) ([]Inchi, error) {
 	}
 	inchis := make([]Inchi, len(formula))
 
-	if len(formula) <= 1 {
-		return nil, nil
-	}
 	p := map[string][]string{
 		"formula":       formula,
 		"connection":    connection,

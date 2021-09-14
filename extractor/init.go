@@ -427,7 +427,7 @@ d:
 
 				li, err := strconv.Atoi(lastSucceded.Id)
 				if err != nil {
-					logger.Panic("Error turning ID into int")
+					logger.Panic("Error turning ID into int ", err)
 				}
 				if ex.LastIDAdded < li {
 					ex.LastIDAdded = li

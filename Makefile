@@ -20,3 +20,8 @@ macbuild:
 	env GOOS=darwin GOARCH=amd64 go build -o $(DEPLOY_PATH)$(BIN_NAME)_mac main.go
 
 build-all: linuxbuild macbuild
+
+publish:
+	docker-compose up golangBuilder
+	docker-compose build unichem
+	docker push chembl/unichem2index:latest

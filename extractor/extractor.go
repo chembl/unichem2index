@@ -133,7 +133,7 @@ l:
 
 		i := *new(Inchi)
 		if len(standardInchi) == 0 {
-			logger.Warnf("Compound (%d) without InChI key, skipping split", UCI)
+			logger.Debugf("Compound (%d) without InChI key, skipping split", UCI)
 		} else {
 			i.Inchi = standardInchi
 		}
@@ -201,20 +201,25 @@ func (ex *Extractor) addSourceToCompound(source CompoundSource, assignment int) 
 	}
 
 	if ex.PreviousCompound.UCI != ex.CurrentCompound.UCI {
+		var err error
 		logger.Debugf("New compound UCI <%d> adding previous one <%d> to index", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
 		if len(ex.PreviousCompound.Sources) <= 0 {
 			logger.Debug("Compound with empty sources", ex.PreviousCompound.Sources)
 			ex.PreviousCompound.IsSourceless = true
 		}
 
-		inDi := InchiDivider{logger}
-		c, err := inDi.ProcessInchi(ex.PreviousCompound)
-		if err != nil {
-			m := fmt.Sprintf("Split InChI error in UCI: %d", ex.PreviousCompound.UCI)
-			fmt.Println(m)
-			logger.Panic(m)
-			panic(err)
+		c := ex.PreviousCompound
+		if len(c.Inchi.Inchi) > 1 {
+			inDi := InchiDivider{logger}
+			c, err = inDi.ProcessInchi(ex.PreviousCompound)
+			if err != nil {
+				m := fmt.Sprintf("Split InChI error in UCI: %d ", ex.PreviousCompound.UCI)
+				fmt.Println(m, err)
+				logger.Panic(m, err)
+				panic(err)
+			}
 		}
+
 		ex.ElasticManager.AddToBulk(c)
 
 		if assignment == 1 {
