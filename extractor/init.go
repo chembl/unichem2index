@@ -53,8 +53,16 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 		}
 	}(db)
 
-	var query = `SELECT count(UCI) FROM UC_STRUCTURE`
-	l.Info(query)
+	var query = `SELECT count(distinct(ucpa.UCI))
+				FROM
+				UC_XREF xref,
+				UC_SOURCE so,
+				UC_STRUCTURE ucpa
+				WHERE xref.UCI = ucpa.UCI
+				AND xref.src_id = so.src_id
+				ORDER BY ucpa.UCI`
+
+	l.Debug(query)
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		m := fmt.Sprint("Error running query ", err)
@@ -182,7 +190,7 @@ ORDER BY ucpa.UCI`
 	sd := lastUpdatedDate.AddDate(0, 0, -15)
 	fd := fmt.Sprintf(`TO_DATE('%s', 'YYYYMMDD')`, sd.Format("20060102"))
 	query := fmt.Sprintf(queryTemplate, fd)
-	l.Info(query)
+	l.Debug(query)
 
 	extractOne(ctx, l, conf, query)
 }
@@ -370,12 +378,19 @@ func launchExtractor(ctx context.Context, l *zap.SugaredLogger, cn *Configuratio
 
 	ex.ElasticManager = em
 
-	exerror := make(chan error)
+	exError := make(chan error)
 	inFinish := make(chan int)
 	ex.inFinish = inFinish
-	ex.exerror = exerror
+	ex.exerror = exError
 	isExtractorDone := false
-	go ex.Start(ctx)
+	go func() {
+		err := ex.Start(ctx)
+		if err != nil {
+			m := fmt.Sprint("Error starting extractor ", err)
+			fmt.Println(m)
+			logger.Error(m)
+		}
+	}()
 
 d:
 	for {
@@ -390,7 +405,7 @@ d:
 			if isExtractorDone && em.totalDoneJobs >= em.totalSentJobs {
 				break d
 			}
-		case err := <-exerror:
+		case err := <-exError:
 			m := fmt.Sprintf("Extractor ID: %d error", ex.id)
 			logger.Error(m)
 			fmt.Println(err.Error())

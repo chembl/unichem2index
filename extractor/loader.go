@@ -236,7 +236,7 @@ func (em *ElasticManager) getCount() (int64, error) {
 
 	countResult, err := em.Client.Count().Index(em.IndexName).Do(ctx)
 	if err != nil {
-		m := fmt.Sprint("Error getting getting last updated UCI", err)
+		m := fmt.Sprint("Error getting index total UCI", err)
 		fmt.Println(m)
 		l.Fatal(m)
 		return 0, err
