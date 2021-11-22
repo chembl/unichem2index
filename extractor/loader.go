@@ -43,10 +43,16 @@ type Compound struct {
 	IsSourceless     bool             `json:"is_sourceless"`
 }
 
+// UCICount is the amount of UCI by Sources on UniChem
+type UCICount struct {
+	TotalUCI int `json:"totalUCI"`
+	Source   int `json:"source"`
+}
+
 // WorkerResponse contains the result of the BulkRequest to the ElasticSearch index
 type WorkerResponse struct {
-	Succeeded int
-	Indexed   int
+	Succeeded    int
+	Indexed      int
 	Created      int
 	Updated      int
 	Deleted      int
@@ -328,6 +334,47 @@ func (em *ElasticManager) getLastUpdated() (time.Time, error) {
 	l.Info(m)
 
 	return oldest, err
+}
+
+func (em *ElasticManager) getUCICountBySources() (map[int]UCICount, error) {
+	ctx := em.Context
+	l := em.logger
+	l.Info("Retrieving UCI count by sources")
+
+	aggUCISou := elastic.NewTermsAggregation().Field("sources.id").Size(3000).OrderByCountDesc()
+	searchResults, err := em.Client.Search().Index(em.IndexName).Size(0).Aggregation("uci_by_sources_count", aggUCISou).Do(ctx)
+	if err != nil {
+		m := fmt.Sprint("Error getting getting last updated UCI", err)
+		fmt.Println(m)
+		l.Fatal(m)
+
+		return nil, err
+	}
+
+	uciCountAgg, found := searchResults.Aggregations.Terms("uci_by_sources_count")
+	if !found {
+		m := fmt.Sprint("uci_by_sources_count aggregation not found", err)
+		fmt.Println(m)
+		l.Fatal(m)
+
+		return nil, err
+	}
+
+	uca := make(map[int]UCICount)
+	for _, bu := range uciCountAgg.Buckets {
+		sid := bu.KeyNumber
+		s, err := sid.Int64()
+		if err != nil {
+			l.Error("Failed to parse the SourceID from the bucket")
+			return nil, err
+		}
+		uca[int(s)] = UCICount{
+			TotalUCI: int(bu.DocCount),
+			Source: int(s),
+		}
+	}
+	l.Debug("Map UCI count:", uca)
+	return uca, err
 }
 
 //Close terminates the ElasticSearch Client and BulkProcessor

@@ -27,6 +27,12 @@ func Init(l *zap.SugaredLogger, conf *Configuration, isUpdate bool) {
 	if isUpdate {
 		updateFromLastUCI(ctx, l, conf)
 		updateRemovedSources(ctx, l, conf)
+		err := LoadSources(ctx, l, conf)
+		if err != nil {
+			m := fmt.Sprint("Error loading sources", err)
+			fmt.Println(m)
+			l.Fatal(m)
+		}
 	} else {
 		startExtraction(ctx, l, conf)
 	}
@@ -113,7 +119,7 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 
 func updateFromLastUCI(ctx context.Context, l *zap.SugaredLogger, conf *Configuration) {
 	conf.MaxConcurrent = 2
-	var queryRange = 20000000
+	var queryRange = 10000000
 	m := "STARTING UPDATING PROCESS"
 	fmt.Println(m)
 	l.Info(m)

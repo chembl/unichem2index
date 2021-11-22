@@ -22,6 +22,7 @@ type Configuration struct {
 	LogPath         string
 	OracleConn      string
 	ElasticHost     string
+	MongoDB         string
 	BulkLimit       int
 	Index           string
 	Type            string
