@@ -72,4 +72,11 @@ services:
   #   shm_size: 2gb
   #   volumes:
   #     - ./dockerconfig/configure.sql:/docker-entrypoint-initdb.d/configure.sql
-
+  mongo:
+    image: mongo:4.4
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
