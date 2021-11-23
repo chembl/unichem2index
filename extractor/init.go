@@ -69,6 +69,9 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 				ORDER BY ucpa.UCI`
 
 	l.Debug(query)
+	m := "Counting UCIs in OraDB..."
+	fmt.Println(m)
+	l.Info(m)
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		m := fmt.Sprint("Error running query ", err)
@@ -91,7 +94,9 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 			panic(err)
 		}
 	}
-
+	m = fmt.Sprintf("Query to OraDB successful: %d", dbCount)
+	fmt.Println(m)
+	l.Info(m)
 	em, err := getElasticManager(ctx, l, conf)
 	if err != nil {
 		m := fmt.Sprint("Error creating elastic manager ", err)
@@ -100,6 +105,9 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 		panic(err)
 	}
 
+	m = "Counting UCIs in ES..."
+	fmt.Println(m)
+	l.Info(m)
 	countResult, err := em.getCount()
 	if err != nil {
 		m := fmt.Sprint("Error getting the total count ", err)
@@ -107,7 +115,7 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 		l.Panic(m)
 		panic(err)
 	}
-	m := fmt.Sprintf("UCI total numbers - Database: %d Index: %d", dbCount, countResult)
+	m = fmt.Sprintf("UCI total numbers - Database: %d Index: %d", dbCount, countResult)
 	fmt.Println(m)
 
 	if dbCount == int(countResult) {

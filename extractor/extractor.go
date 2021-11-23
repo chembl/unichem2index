@@ -70,7 +70,7 @@ func (ex *Extractor) queryByOneWithSources(ctx context.Context) error {
 
 	var (
 		UCI, srcID, assignment, srcPrivate                                            int
-		standardInchi, standardInchiKey, smiles                                       string
+		standardInchi, standardInchiKey, smiles, auxSrc                               string
 		srcCompoundID, srcNameLong, srcName, srcDescription, srcBaseURL, srcShortName string
 		srcBaseIDURLAvailable, srcAuxForURL                                           bool
 		lastUpdated                                                                   sql.NullTime
@@ -107,6 +107,7 @@ l:
 			&assignment,
 			&created,
 			&lastUpdated,
+			&auxSrc,
 			&srcID,
 			&srcNameLong,
 			&srcName,
@@ -167,6 +168,7 @@ l:
 			BaseURL:            srcBaseURL,
 			ShortName:          srcShortName,
 			BaseIDURLAvailable: srcBaseIDURLAvailable,
+			AuxSrc: auxSrc,
 			AuxForURL:          srcAuxForURL,
 			CreatedAt:          created,
 			LastUpdate:         l,

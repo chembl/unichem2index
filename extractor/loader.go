@@ -24,6 +24,7 @@ type CompoundSource struct {
 	BaseURL            string    `json:"base_url"`
 	ShortName          string    `json:"short_name"`
 	BaseIDURLAvailable bool      `json:"base_id_url_available"`
+	AuxSrc             string    `json:"aux_src"`
 	AuxForURL          bool      `json:"aux_for_url"`
 	CreatedAt          time.Time `json:"created_at"`
 	LastUpdate         time.Time `json:"last_updated,omitempty"`
@@ -370,7 +371,7 @@ func (em *ElasticManager) getUCICountBySources() (map[int]UCICount, error) {
 		}
 		uca[int(s)] = UCICount{
 			TotalUCI: int(bu.DocCount),
-			Source: int(s),
+			Source:   int(s),
 		}
 	}
 	l.Debug("Map UCI count:", uca)
