@@ -113,7 +113,7 @@ func (em *ElasticManager) Init(ctx context.Context, conf *Configuration, logger 
 
 	ex, err := em.Client.IndexExists(em.IndexName).Do(ctx)
 	if err != nil {
-		em.logger.Panic("Error fetchin index existence ", err)
+		em.logger.Panic("Error fetching index existence ", err)
 		return err
 	}
 

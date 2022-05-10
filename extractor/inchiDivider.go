@@ -40,10 +40,13 @@ func (ind *InchiDivider) ProcessInchi(compound Compound) (Compound, error) {
 		StereoType:            s["stereoType"],
 		IsotopicAtoms:         s["isotopicAtoms"],
 		IsotopicExchangeableH: s["isotopicExchangeableH"],
+		FullStereo:            fmt.Sprintf("%s%s%s", s["stereoSP3"], s["stereoSP3inverted"], s["stereoType"]),
+		FullIsotopic:          fmt.Sprintf("%s%s", s["isotopicAtoms"], s["isotopicExchangeableH"]),
 		Inchi:                 compound.Inchi.Inchi,
 	}
 	compound.Inchi = i
 	compound.Components, err = ind.extractSubCompounds(i)
+	logger.Debugw("Split Inchi", "UCI", compound.UCI, "Inchi", compound.Inchi)
 	if err != nil {
 		logger.Errorf("Error getting subcompounds ")
 		return compound, err
@@ -118,7 +121,6 @@ func (ind *InchiDivider) extractSubCompounds(inchi Inchi) ([]Inchi, error) {
 		l.Debugf("Component inchi: %s", inchis[i].Inchi)
 	}
 	l.Debug("Inchi has %d components", len(inchis))
-
 
 	return inchis, nil
 }

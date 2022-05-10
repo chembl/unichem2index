@@ -27,14 +27,14 @@ func Init(l *zap.SugaredLogger, conf *Configuration, isUpdate bool) {
 	if isUpdate {
 		updateFromLastUCI(ctx, l, conf)
 		updateRemovedSources(ctx, l, conf)
-		err := LoadSources(ctx, l, conf)
-		if err != nil {
-			m := fmt.Sprint("Error loading sources", err)
-			fmt.Println(m)
-			l.Fatal(m)
-		}
 	} else {
 		startExtraction(ctx, l, conf)
+	}
+	err := LoadSources(ctx, l, conf)
+	if err != nil {
+		m := fmt.Sprint("Error loading sources", err)
+		fmt.Println(m)
+		l.Fatal(m)
 	}
 	match := validateLoad(ctx, l, conf)
 	m := fmt.Sprint("Db count and index count match: ", match)
@@ -145,7 +145,7 @@ func updateFromLastUCI(ctx context.Context, l *zap.SugaredLogger, conf *Configur
 	}
 	em.Close()
 
-	conf.QueryMax.Start = lastUCI - 1
+	conf.QueryMax.Start = lastUCI - 10
 	conf.QueryMax.Finish = lastUCI + queryRange
 	startExtraction(ctx, l, conf)
 }

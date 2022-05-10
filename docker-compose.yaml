@@ -1,4 +1,4 @@
-version: '2.2'
+version: '3.8'
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.5.2
@@ -8,7 +8,7 @@ services:
       - transport.host=0.0.0.0
       - bootstrap.memory_lock=true
       - "discovery.type=single-node"
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "ES_JAVA_OPTS=-Xms1024m -Xmx1024m"
     ulimits:
       memlock:
         soft: -1
@@ -16,6 +16,10 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 2g
     mem_limit: 2g
     cap_add:
       - IPC_LOCK
@@ -37,6 +41,7 @@ services:
     build: Docker/.
     container_name: unichem
     image: chembl/unichem2index
+    platform: linux/x86_64
     volumes:
       - ./build/logs/:/opt/unichem/build/logs/
       - ./build/config.yaml:/opt/unichem/config.yaml
@@ -45,11 +50,13 @@ services:
     build: Docker/.
     container_name: unichem
     image: chembl/unichem2index
+    platform: linux/x86_64
     volumes:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem/
     entrypoint: [ "tail", "-f", "/dev/null" ]
   golangBuilder:
-    image: golang:1.17
+    image: golang:1.17-stretch
+    platform: linux/amd64
     container_name: uniIndexerDocker
     volumes:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem2index
@@ -57,7 +64,8 @@ services:
     # entrypoint: ["tail", "-f", "/dev/null"]
     entrypoint: [ "make", "build-docker" ]
   localBuild:
-    image: golang:1.17
+    image: golang:1.17-stretch
+    platform: linux/amd64
     container_name: uniIndexerLocal
     volumes:
       - ~/ebi/dev/ChEMBL/unichem/unichem2index:/opt/unichem2index
