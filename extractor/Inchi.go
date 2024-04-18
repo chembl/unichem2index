@@ -16,6 +16,8 @@ type Inchi struct {
 	StereoType            string `json:"stereo_type"`
 	IsotopicAtoms         string `json:"isotopic_atoms"`
 	IsotopicExchangeableH string `json:"isotopic_exchangeable_h"`
+	FullStereo            string `json:"full_stereo"`
+	FullIsotopic          string `json:"full_isotopic"`
 	Inchi                 string `json:"inchi"`
 }
 
@@ -57,5 +59,3 @@ func (inchi *Inchi) buildInchiString() string {
 	inchi.Inchi = vf + connections + hAtoms + charge + protons + stereoDbond + stereoSP3 + stereoSP3inverted + stereoType + isotopicAtoms + isotopicExchangeableH
 	return inchi.Inchi
 }
-
-

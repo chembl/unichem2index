@@ -12,24 +12,27 @@ import (
 )
 
 type Source struct {
-	SourceID         int       `bson:"sourceID,omitempty"`
-	Name             string    `bson:"name,omitempty"`
-	Description      string    `bson:"description,omitempty"`
-	SrcReleaseNumber int32     `bson:"srcReleaseNumber,omitempty"`
-	SrcReleaseDate   time.Time `bson:"srcReleaseDate,omitempty"`
-	Created          time.Time `bson:"created,omitempty"`
-	LastUpdated      time.Time `bson:"lastUpdated,omitempty"`
-	LongName         string    `bson:"nameLong,omitempty"`
-	SrcDetails       string    `bson:"srcDetails,omitempty"`
-	SrcUrl           string    `bson:"srcUrl,omitempty"`
-	BaseIdUrl        string    `bson:"baseIdUrl,omitempty"`
-	Private          bool      `bson:"private,omitempty"`
-	NameLabel        string    `bson:"nameLabel,omitempty"`
-	UpdateComments   string    `bson:"updateComments,omitempty"`
-	UCICount         int       `bson:"UCICount,omitempty"`
+	SourceID           int       `bson:"sourceID,omitempty"`
+	Name               string    `bson:"name,omitempty"`
+	Description        string    `bson:"description,omitempty"`
+	SrcReleaseNumber   int32     `bson:"srcReleaseNumber,omitempty"`
+	SrcReleaseDate     time.Time `bson:"srcReleaseDate,omitempty"`
+	Created            time.Time `bson:"created,omitempty"`
+	LastUpdated        time.Time `bson:"lastUpdated,omitempty"`
+	LongName           string    `bson:"nameLong,omitempty"`
+	SrcDetails         string    `bson:"srcDetails,omitempty"`
+	SrcUrl             string    `bson:"srcUrl,omitempty"`
+	BaseIdUrl          string    `bson:"baseIdUrl,omitempty"`
+	Private            bool      `bson:"private"`
+	NameLabel          string    `bson:"nameLabel,omitempty"`
+	AuxForURL          bool      `bson:"auxForURL"`
+	BaseIDurlAvailable bool      `bson:"baseIDurlAvailable"`
+	UpdateComments     string    `bson:"updateComments,omitempty"`
+	UCICount           int       `bson:"UCICount,omitempty"`
 }
 
 func getOriginalSources(ctx context.Context, l *zap.SugaredLogger, conf *Configuration) ([]Source, error) {
+	l.Info("Fetching sources from origin DB")
 	db, err := sql.Open("godror", conf.OracleConn)
 	if err != nil {
 		m := fmt.Sprint("Go oracle open ERROR ")
@@ -59,6 +62,8 @@ SELECT so.SRC_ID,
        so.SRC_DETAILS,
        so.SRC_URL,
        so.BASE_ID_URL,
+       so.AUX_FOR_URL,
+       so.BASE_ID_URL_AVAILABLE,
        so.PRIVATE,
        so.NAME_LABEL,
        so.UPDATE_COMMENTS
@@ -74,7 +79,7 @@ ORDER BY so.SRC_ID`
 		srcUrl, baseIdUrl, updateComments       sql.NullString
 		name, description, longName, srcDetails string
 		nameLabel                               string
-		private                                 bool
+		auxForUrl, baseIDURLAvailable, private  int
 		created, lastUpdated, srcReleaseDate    sql.NullTime
 	)
 
@@ -105,6 +110,8 @@ ORDER BY so.SRC_ID`
 				&srcDetails,
 				&srcUrl,
 				&baseIdUrl,
+				&auxForUrl,
+				&baseIDURLAvailable,
 				&private,
 				&nameLabel,
 				&updateComments)
@@ -158,22 +165,40 @@ ORDER BY so.SRC_ID`
 				uc = updateComments.String
 			}
 
+			hasAuxForURL := false
+			if auxForUrl == 1 {
+				hasAuxForURL = true
+			}
+
+			isBaseIDURLAvailable := false
+			if baseIDURLAvailable == 1 {
+				isBaseIDURLAvailable = true
+			}
+
+			isPrivate := false
+			if private == 1 {
+				isPrivate = true
+			}
+
 			sources = append(sources, Source{
-				SourceID:         sourceID,
-				Name:             name,
-				Description:      description,
-				SrcReleaseNumber: srn,
-				SrcReleaseDate:   srd,
-				Created:          cr,
-				LastUpdated:      lu,
-				LongName:         longName,
-				SrcDetails:       srcDetails,
-				SrcUrl:           su,
-				BaseIdUrl:        biu,
-				Private:          private,
-				NameLabel:        nameLabel,
-				UpdateComments:   uc,
+				SourceID:           sourceID,
+				Name:               name,
+				Description:        description,
+				SrcReleaseNumber:   srn,
+				SrcReleaseDate:     srd,
+				Created:            cr,
+				LastUpdated:        lu,
+				LongName:           longName,
+				SrcDetails:         srcDetails,
+				SrcUrl:             su,
+				BaseIdUrl:          biu,
+				Private:            isPrivate,
+				NameLabel:          nameLabel,
+				AuxForURL:          hasAuxForURL,
+				BaseIDurlAvailable: isBaseIDURLAvailable,
+				UpdateComments:     uc,
 			})
+			l.Debugf("Origin Source ID: %d Name: %s Private: %t HasAUX: %t BaseIDurlAvailable: %t", sourceID, name, isPrivate, hasAuxForURL, isBaseIDURLAvailable)
 			continue
 		}
 		break
@@ -244,7 +269,7 @@ func LoadSources(ctx context.Context, l *zap.SugaredLogger, conf *Configuration)
 	for _, so := range originalSources {
 		so.UCICount = UCICounts[so.SourceID].TotalUCI
 
-		m := fmt.Sprint("Inserting: ", so.Name, " Private: ", so.Private, " ID: ", so.SourceID)
+		m := fmt.Sprint("Inserting: ", so.Name, " Private: ", so.Private, " ID: ", so.SourceID, " HasAuxForURL: ", so.AuxForURL)
 		l.Debug(m)
 		up := bson.D{{"$set", so}}
 		_, err = sources.UpdateByID(ctx, so.SourceID, up, o)

@@ -27,14 +27,14 @@ func Init(l *zap.SugaredLogger, conf *Configuration, isUpdate bool) {
 	if isUpdate {
 		updateFromLastUCI(ctx, l, conf)
 		updateRemovedSources(ctx, l, conf)
-		err := LoadSources(ctx, l, conf)
-		if err != nil {
-			m := fmt.Sprint("Error loading sources", err)
-			fmt.Println(m)
-			l.Fatal(m)
-		}
 	} else {
 		startExtraction(ctx, l, conf)
+	}
+	err := LoadSources(ctx, l, conf)
+	if err != nil {
+		m := fmt.Sprint("Error loading sources", err)
+		fmt.Println(m)
+		l.Fatal(m)
 	}
 	match := validateLoad(ctx, l, conf)
 	m := fmt.Sprint("Db count and index count match: ", match)
@@ -69,6 +69,9 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 				ORDER BY ucpa.UCI`
 
 	l.Debug(query)
+	m := "Counting UCIs in OraDB..."
+	fmt.Println(m)
+	l.Info(m)
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		m := fmt.Sprint("Error running query ", err)
@@ -91,7 +94,9 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 			panic(err)
 		}
 	}
-
+	m = fmt.Sprintf("Query to OraDB successful: %d", dbCount)
+	fmt.Println(m)
+	l.Info(m)
 	em, err := getElasticManager(ctx, l, conf)
 	if err != nil {
 		m := fmt.Sprint("Error creating elastic manager ", err)
@@ -100,6 +105,9 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 		panic(err)
 	}
 
+	m = "Counting UCIs in ES..."
+	fmt.Println(m)
+	l.Info(m)
 	countResult, err := em.getCount()
 	if err != nil {
 		m := fmt.Sprint("Error getting the total count ", err)
@@ -107,7 +115,7 @@ func validateLoad(ctx context.Context, l *zap.SugaredLogger, conf *Configuration
 		l.Panic(m)
 		panic(err)
 	}
-	m := fmt.Sprintf("UCI total numbers - Database: %d Index: %d", dbCount, countResult)
+	m = fmt.Sprintf("UCI total numbers - Database: %d Index: %d", dbCount, countResult)
 	fmt.Println(m)
 
 	if dbCount == int(countResult) {
@@ -137,7 +145,7 @@ func updateFromLastUCI(ctx context.Context, l *zap.SugaredLogger, conf *Configur
 	}
 	em.Close()
 
-	conf.QueryMax.Start = lastUCI - 1
+	conf.QueryMax.Start = lastUCI - 10
 	conf.QueryMax.Finish = lastUCI + queryRange
 	startExtraction(ctx, l, conf)
 }

@@ -28,7 +28,7 @@ type Extractor struct {
 	CurrentCompound  Compound
 }
 
-// Start extracting unichem data by querying Unichem's db
+// Start extracting UniChem data by querying UniChem's db
 // and adds them into the index using a provided ElasticManager
 func (ex *Extractor) Start(ctx context.Context) error {
 	ex.PreviousCompound = Compound{UCI: 0}
@@ -69,10 +69,9 @@ func (ex *Extractor) queryByOneWithSources(ctx context.Context) error {
 	logger := ex.Logger
 
 	var (
-		UCI, srcID, assignment, srcPrivate                                            int
-		standardInchi, standardInchiKey, smiles                                       string
+		UCI, srcID, assignment, srcPrivate, srcBaseIDURLAvailable, srcAuxForURL       int
+		standardInchi, standardInchiKey, smiles, auxSrc                               string
 		srcCompoundID, srcNameLong, srcName, srcDescription, srcBaseURL, srcShortName string
-		srcBaseIDURLAvailable, srcAuxForURL                                           bool
 		lastUpdated                                                                   sql.NullTime
 		created                                                                       time.Time
 	)
@@ -107,6 +106,7 @@ l:
 			&assignment,
 			&created,
 			&lastUpdated,
+			&auxSrc,
 			&srcID,
 			&srcNameLong,
 			&srcName,
@@ -143,6 +143,15 @@ l:
 			isPrivate = true
 		}
 
+		isBaseIDURLAvailable := false
+		if srcBaseIDURLAvailable == 1 {
+			isBaseIDURLAvailable = true
+		}
+
+		hasAuxForURL := false
+		if srcAuxForURL == 1 {
+			hasAuxForURL = true
+		}
 		c = Compound{
 			UCI:              UCI,
 			Inchi:            i,
@@ -166,8 +175,9 @@ l:
 			Description:        srcDescription,
 			BaseURL:            srcBaseURL,
 			ShortName:          srcShortName,
-			BaseIDURLAvailable: srcBaseIDURLAvailable,
-			AuxForURL:          srcAuxForURL,
+			BaseIDURLAvailable: isBaseIDURLAvailable,
+			AuxSrc:             auxSrc,
+			AuxForURL:          hasAuxForURL,
 			CreatedAt:          created,
 			LastUpdate:         l,
 			IsPrivate:          isPrivate,
@@ -176,7 +186,9 @@ l:
 	}
 
 	if ex.PreviousCompound.UCI != 0 {
-		ex.ElasticManager.AddToBulk(ex.PreviousCompound)
+		ex.addPreviousCompoundToBulk()
+	} else {
+		logger.Warn("PREVIOUS COMPOUND EMPTY! Worker had nothing to work with")
 	}
 
 	logger.Infof("Sending last bulk for extractor started on %d", ex.QueryStart)
@@ -201,26 +213,8 @@ func (ex *Extractor) addSourceToCompound(source CompoundSource, assignment int) 
 	}
 
 	if ex.PreviousCompound.UCI != ex.CurrentCompound.UCI {
-		var err error
 		logger.Debugf("New compound UCI <%d> adding previous one <%d> to index", ex.CurrentCompound.UCI, ex.PreviousCompound.UCI)
-		if len(ex.PreviousCompound.Sources) <= 0 {
-			logger.Debug("Compound with empty sources", ex.PreviousCompound.Sources)
-			ex.PreviousCompound.IsSourceless = true
-		}
-
-		c := ex.PreviousCompound
-		if len(c.Inchi.Inchi) > 1 {
-			inDi := InchiDivider{logger}
-			c, err = inDi.ProcessInchi(ex.PreviousCompound)
-			if err != nil {
-				m := fmt.Sprintf("Split InChI error in UCI: %d ", ex.PreviousCompound.UCI)
-				fmt.Println(m, err)
-				logger.Panic(m, err)
-				panic(err)
-			}
-		}
-
-		ex.ElasticManager.AddToBulk(c)
+		ex.addPreviousCompoundToBulk()
 
 		if assignment == 1 {
 			ex.CurrentCompound.Sources = append(ex.CurrentCompound.Sources, source)
@@ -231,4 +225,27 @@ func (ex *Extractor) addSourceToCompound(source CompoundSource, assignment int) 
 			ex.PreviousCompound.Sources = append(ex.PreviousCompound.Sources, source)
 		}
 	}
+}
+
+func (ex *Extractor) addPreviousCompoundToBulk() {
+	logger := ex.Logger
+	var err error
+	if len(ex.PreviousCompound.Sources) <= 0 {
+		logger.Debug("Compound with empty sources", ex.PreviousCompound.Sources)
+		ex.PreviousCompound.IsSourceless = true
+	}
+
+	c := ex.PreviousCompound
+	if len(c.Inchi.Inchi) > 1 {
+		inDi := InchiDivider{logger}
+		c, err = inDi.ProcessInchi(ex.PreviousCompound)
+		if err != nil {
+			m := fmt.Sprintf("Split InChI error in UCI: %d ", ex.PreviousCompound.UCI)
+			fmt.Println(m, err)
+			logger.Panic(m, err)
+			panic(err)
+		}
+	}
+
+	ex.ElasticManager.AddToBulk(c)
 }
