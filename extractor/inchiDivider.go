@@ -40,7 +40,7 @@ func (ind *InchiDivider) ProcessInchi(compound Compound) (Compound, error) {
 		StereoType:            s["stereoType"],
 		IsotopicAtoms:         s["isotopicAtoms"],
 		IsotopicExchangeableH: s["isotopicExchangeableH"],
-		FullStereo:            fmt.Sprintf("%s%s%s", s["stereoSP3"], s["stereoSP3inverted"], s["stereoType"]),
+		FullStereo:            fmt.Sprintf("%s%s%s%s", s["stereoDbond"], s["stereoSP3"], s["stereoSP3inverted"], s["stereoType"]),
 		FullIsotopic:          fmt.Sprintf("%s%s", s["isotopicAtoms"], s["isotopicExchangeableH"]),
 		Inchi:                 compound.Inchi.Inchi,
 	}
@@ -117,6 +117,8 @@ func (ind *InchiDivider) extractSubCompounds(inchi Inchi) ([]Inchi, error) {
 		}
 		inchis[i].StereoType = inchi.StereoType
 		inchis[i].IsotopicExchangeableH = inchi.IsotopicExchangeableH
+		inchis[i].FullStereo = fmt.Sprintf("%s%s%s%s", inchis[i].StereoDbond, inchis[i].StereoSP3, inchis[i].StereoSP3inverted, inchi.StereoType)
+		inchis[i].FullIsotopic = fmt.Sprintf("%s%s", inchis[i].IsotopicAtoms, inchis[i].IsotopicExchangeableH)
 		inchis[i].buildInchiString()
 		l.Debugf("Component inchi: %s", inchis[i].Inchi)
 	}
